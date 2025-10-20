@@ -278,6 +278,15 @@ export const generateProceduralGun = () => {
     stats.fireRate = 500 - (bodyLength / 140) * 400 + rand(0, 50);
     stats.damage = 10 + (barrelPower / 3000) * 5;
 
+    // --- Sound Profile ---
+    const soundProfile = {
+        baseFrequency: 900 - (barrelLength / 200) * 600, // Longer barrel = deeper sound
+        pitchDrop: 50 + Math.random() * 100,
+        noiseDuration: 0.15 + (bodyLength / 140) * 0.1, // Bigger body = longer boom
+        gain: 0.12 + (stats.damage / 25) * 0.1, // More damage = louder
+    };
+
+
     // --- Create Firing Sprite ---
     const firingCanvas = document.createElement('canvas');
     firingCanvas.width = canvas.width;
@@ -319,6 +328,7 @@ export const generateProceduralGun = () => {
         sprite: canvas.toDataURL(), 
         firingSprite: firingCanvas.toDataURL(),
         stats, 
-        animation 
+        animation,
+        soundProfile,
     };
 }

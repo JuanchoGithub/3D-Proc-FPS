@@ -11,19 +11,33 @@ function getAudioContext(): AudioContext {
     return audioContext;
 }
 
+export type SoundProfile = {
+  baseFrequency: number;
+  pitchDrop: number;
+  noiseDuration: number;
+  gain: number;
+};
+
 /**
- * Generates and plays a procedural gunshot sound.
+ * Generates and plays a procedural gunshot sound based on a profile.
  * Consists of a noisy burst and a tonal "crack" with a pitch drop.
  */
-export function playGunshot() {
+export function playGunshot(profile?: SoundProfile) {
     const context = getAudioContext();
     if (context.state === 'suspended') {
         context.resume();
     }
     const now = context.currentTime;
 
+    const p = {
+        baseFrequency: profile?.baseFrequency ?? 800,
+        pitchDrop: profile?.pitchDrop ?? 100,
+        noiseDuration: profile?.noiseDuration ?? 0.2,
+        gain: profile?.gain ?? 0.15,
+    };
+
     // Noise part (the "boom")
-    const bufferSize = context.sampleRate * 0.2; // 0.2 seconds
+    const bufferSize = Math.floor(context.sampleRate * p.noiseDuration);
     const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
     const output = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -35,15 +49,15 @@ export function playGunshot() {
     
     const noiseGain = context.createGain();
     noiseGain.gain.setValueAtTime(1, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, now + p.noiseDuration * 0.9);
 
     noiseSource.connect(noiseGain);
     
     // Tonal part (the "crack")
     const osc = context.createOscillator();
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(800, now);
-    osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+    osc.frequency.setValueAtTime(p.baseFrequency, now);
+    osc.frequency.exponentialRampToValueAtTime(p.pitchDrop, now + 0.1);
     
     const oscGain = context.createGain();
     oscGain.gain.setValueAtTime(0.5, now);
@@ -53,14 +67,14 @@ export function playGunshot() {
 
     // Combine and play
     const masterGain = context.createGain();
-    masterGain.gain.value = 0.15; // Not too loud
+    masterGain.gain.value = p.gain;
     noiseGain.connect(masterGain);
     oscGain.connect(masterGain);
     masterGain.connect(context.destination);
     
     noiseSource.start(now);
     osc.start(now);
-    noiseSource.stop(now + 0.2);
+    noiseSource.stop(now + p.noiseDuration);
     osc.stop(now + 0.2);
 }
 

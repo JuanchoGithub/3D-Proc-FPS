@@ -42,6 +42,7 @@ export default class Player {
     update(delta: number, keys: { [key: string]: boolean }, isCollision: (x: number, z: number) => boolean, doors: THREE.Mesh[]) {
         // Movement
         const speed = 5.0;
+        const playerRadius = 0.4; // How far to keep the camera from the wall geometry
         let moveX = 0;
         let moveZ = 0;
         if (keys['KeyW'] || keys['ArrowUp']) moveZ = -1;
@@ -63,17 +64,17 @@ export default class Player {
                 .add(rightDirection.multiplyScalar(moveX))
                 .normalize();
 
-            const totalMove = moveDirection.multiplyScalar(speed * delta);
+            const velocity = moveDirection.multiplyScalar(speed * delta);
             const oldPosition = this.camera.position.clone();
             
-            // Move on X and check collision
-            this.camera.position.x += totalMove.x;
-            if (isCollision(this.camera.position.x, this.camera.position.z)) {
+            // Move on X and check collision, applying a radius
+            this.camera.position.x += velocity.x;
+            if (isCollision(this.camera.position.x + Math.sign(velocity.x) * playerRadius, this.camera.position.z)) {
                 this.camera.position.x = oldPosition.x;
             }
-            // Move on Z and check collision
-            this.camera.position.z += totalMove.z;
-            if (isCollision(this.camera.position.x, this.camera.position.z)) {
+            // Move on Z and check collision, applying a radius
+            this.camera.position.z += velocity.z;
+            if (isCollision(this.camera.position.x, this.camera.position.z + Math.sign(velocity.z) * playerRadius)) {
                 this.camera.position.z = oldPosition.z;
             }
         }

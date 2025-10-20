@@ -103,6 +103,7 @@ export default class Game {
         const { grid, rooms, doorLocations } = generateLevel();
         this.levelData.grid = grid;
         this.levelData.doorLocations = doorLocations;
+        this.levelData.rooms = rooms; // Store rooms data
         
         this.levelContainer = new THREE.Group();
         this.scene.add(this.levelContainer);
@@ -126,7 +127,19 @@ export default class Game {
         if (this.state !== 'preview') return;
         this.enemyManager.clearEnemies();
 
-        const spawnTile = this.levelData.floorTiles[Math.floor(Math.random() * this.levelData.floorTiles.length)];
+        let spawnTile: { x: number; z: number; };
+        if (this.levelData.rooms && this.levelData.rooms.length > 0) {
+            const spawnRoom = this.levelData.rooms[0];
+            // Use center of the first room as the spawn tile. Note: level generator uses y for z.
+            spawnTile = {
+                x: Math.floor(spawnRoom.x + spawnRoom.width / 2),
+                z: Math.floor(spawnRoom.y + spawnRoom.height / 2)
+            };
+        } else {
+            // Fallback to old logic if there are no rooms
+            spawnTile = this.levelData.floorTiles[Math.floor(Math.random() * this.levelData.floorTiles.length)];
+        }
+        
         const spawnPos = new THREE.Vector3(
             (spawnTile.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2,
             WALL_HEIGHT / 2,
@@ -134,7 +147,7 @@ export default class Game {
         );
         this.player.spawn(spawnPos);
         
-        this.enemyManager.spawnEnemies(this.levelData.floorTiles, spawnTile);
+        this.enemyManager.spawnEnemies(this.levelData.floorTiles, spawnTile, this.levelData.grid);
         
         this.bullets.forEach(b => this.scene.remove(b));
         this.bullets = [];
@@ -150,13 +163,30 @@ export default class Game {
         this.controls.lock();
     }
     
-    private isCollision = (posX: number, posZ: number) => {
+    private getCollision = (posX: number, posZ: number): { type: 'wall' | 'door', gridX: number, gridZ: number } | null => {
         const gridX = Math.floor((posX / TILE_SIZE) + MAP_WIDTH / 2);
         const gridZ = Math.floor((posZ / TILE_SIZE) + MAP_HEIGHT / 2);
-        if (this.levelData.grid[gridX]?.[gridZ] === 0) return true;
+
+        if (gridX < 0 || gridX >= MAP_WIDTH || gridZ < 0 || gridZ >= MAP_HEIGHT) {
+            const clampedX = THREE.MathUtils.clamp(gridX, 0, MAP_WIDTH - 1);
+            const clampedZ = THREE.MathUtils.clamp(gridZ, 0, MAP_HEIGHT - 1);
+            return { type: 'wall', gridX: clampedX, gridZ: clampedZ };
+        }
+
+        if (this.levelData.grid[gridX]?.[gridZ] === 0) {
+            return { type: 'wall', gridX, gridZ };
+        }
+        
         const door = this.levelData.doors.find((d: THREE.Mesh) => d.userData.gridX === gridX && d.userData.gridZ === gridZ);
-        if (door && (door.userData.state === 'closed' || door.userData.state === 'closing')) return true;
-        return false;
+        if (door && (door.userData.state === 'closed' || door.userData.state === 'closing')) {
+            return { type: 'door', gridX, gridZ };
+        }
+        
+        return null;
+    };
+    
+    private isCollision = (posX: number, posZ: number) => {
+        return this.getCollision(posX, posZ) !== null;
     };
 
     private updateDoorState(delta: number, time: number) {
@@ -213,13 +243,38 @@ export default class Game {
     private updateBullets(delta: number) {
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             const bullet = this.bullets[i];
+            const prevPos = bullet.position.clone();
             bullet.position.addScaledVector(bullet.userData.velocity, delta);
             let hit = false;
 
-            if (this.isCollision(bullet.position.x, bullet.position.z)) {
-                this.createBulletDecal(bullet.position, bullet.userData.velocity);
+            const collision = this.getCollision(bullet.position.x, bullet.position.z);
+
+            if (collision) {
+                let hitPosition = bullet.position.clone();
+
+                if (collision.type === 'wall') {
+                    const { gridX, gridZ } = collision;
+                    const wallMinX = (gridX - MAP_WIDTH / 2) * TILE_SIZE;
+                    const wallMaxX = wallMinX + TILE_SIZE;
+                    const wallMinZ = (gridZ - MAP_HEIGHT / 2) * TILE_SIZE;
+                    const wallMaxZ = wallMinZ + TILE_SIZE;
+
+                    const ray = new THREE.Ray(prevPos, bullet.userData.velocity.clone().normalize());
+                    const box = new THREE.Box3(
+                        new THREE.Vector3(wallMinX, 0, wallMinZ),
+                        new THREE.Vector3(wallMaxX, WALL_HEIGHT, wallMaxZ)
+                    );
+                    
+                    const intersectionPoint = new THREE.Vector3();
+                    if (ray.intersectBox(box, intersectionPoint)) {
+                        hitPosition.copy(intersectionPoint);
+                    }
+                }
+                
+                this.createBulletDecal(hitPosition, bullet.userData.velocity);
                 hit = true;
             }
+
 
             if (!hit) {
                  const hitEnemy = this.enemyManager.checkHit(bullet.position);
@@ -352,7 +407,9 @@ export default class Game {
 
             this.player.update(delta, this.keys, this.isCollision, this.levelData.doors);
             this.updateDoorState(delta, time);
-            this.enemyManager.update(delta, this.player, this.isCollision, time);
+            if (this.levelContainer) {
+              this.enemyManager.update(delta, this.player, this.isCollision, time, this.levelContainer);
+            }
             const enemyBulletHits = this.enemyManager.updateEnemyBullets(delta, this.player, this.isCollision);
             enemyBulletHits.forEach(hit => this.createBulletDecal(hit.position, hit.velocity));
             this.updateBullets(delta);
@@ -419,7 +476,7 @@ export default class Game {
         if (time - this.lastShotTime < currentGun.stats.fireRate) return;
         this.lastShotTime = time;
 
-        playGunshot();
+        playGunshot(currentGun.soundProfile);
 
         if (this.ui.gunSprite) {
             const { recoil, duration } = currentGun.animation;
