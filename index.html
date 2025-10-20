@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf--8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>3D Procedural Shooter</title>
+    <style>
+      body, html, #root {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden; /* Prevents scrollbars */
+        background-color: #000;
+        color: white;
+        font-family: monospace;
+      }
+      canvas {
+        display: block; /* Removes bottom margin/whitespace */
+      }
+      #overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        cursor: default;
+        font-size: 24px;
+        gap: 20px;
+      }
+      #crosshair {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 4px;
+        height: 4px;
+        background-color: white;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        mix-blend-mode: difference;
+      }
+      #map-overlay {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background-color: rgba(0, 0, 0, 0.6);
+        border: 1px solid #fff;
+        padding: 5px;
+        display: none; /* Hidden by default */
+      }
+      #map-canvas {
+        width: 200px;
+        height: 200px;
+      }
+      #menu-buttons {
+        display: flex;
+        gap: 15px;
+      }
+      button {
+        background-color: #6200ea;
+        color: white;
+        border: none;
+        padding: 15px 25px;
+        font-family: monospace;
+        cursor: pointer;
+        border-radius: 5px;
+        font-size: 18px;
+        transition: background-color 0.2s;
+      }
+      button:hover:not(:disabled) {
+        background-color: #7b1fa2;
+      }
+      button:disabled {
+        background-color: #333;
+        color: #777;
+        cursor: not-allowed;
+      }
+    </style>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "three": "https://esm.sh/three@0.165.0",
+    "three/addons/": "https://esm.sh/three@0.165.0/addons/",
+    "three/": "https://aistudiocdn.com/three@^0.180.0/"
+  }
+}
+</script>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <div id="crosshair" style="display: none;"></div>
+    <div id="overlay">
+      <h1>3D Procedural Shooter</h1>
+      <p id="subtitle">Generate a level, then press Play!</p>
+      <div id="menu-buttons">
+        <button id="generate-btn">Generate New Level</button>
+        <button id="play-btn">Play Game</button>
+      </div>
+    </div>
+    <div id="map-overlay">
+      <canvas id="map-canvas" width="200" height="200"></canvas>
+    </div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

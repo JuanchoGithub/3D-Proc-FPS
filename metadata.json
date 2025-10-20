@@ -1,0 +1,5 @@
+{
+  "name": "3D Procedural Shooter Demo",
+  "description": "A third-person shooter game built with Three.js, featuring procedurally generated terrain, objects, and textures.",
+  "requestFramePermissions": []
+}
