@@ -16,7 +16,21 @@ export const createMaterials = () => {
         dirt: Textures.generateDirtTexture(),
     };
 
-    const doorTexture = Textures.generateDoorTexture();
+    const doorTextures = {
+        red: Textures.generateColoredDoorTexture(new THREE.Color('#d32f2f')),
+        green: Textures.generateColoredDoorTexture(new THREE.Color('#388e3c')),
+        blue: Textures.generateColoredDoorTexture(new THREE.Color('#1976d2')),
+        yellow: Textures.generateColoredDoorTexture(new THREE.Color('#fbc02d')),
+    };
+    
+    const keyTextures = {
+        red: Textures.generateKeycardTexture(new THREE.Color('#d32f2f')),
+        green: Textures.generateKeycardTexture(new THREE.Color('#388e3c')),
+        blue: Textures.generateKeycardTexture(new THREE.Color('#1976d2')),
+        yellow: Textures.generateKeycardTexture(new THREE.Color('#fbc02d')),
+    };
+
+    const exitDoorTexture = Textures.generateExitDoorTexture();
     const boneTexture = Textures.generateBoneTexture();
     const barrelTextures = Textures.generateBarrelTexture();
     const barrelTopTextures = Textures.generateBarrelTopTexture();
@@ -24,6 +38,12 @@ export const createMaterials = () => {
     const bulletDecalTextures = Textures.generateBulletDecalTexture();
     const chitinTexture = Textures.generateChitinTexture();
     const droneTexture = Textures.generateDroneTexture();
+
+    const createDoorMaterial = (textures: {map: THREE.CanvasTexture, normalMap: THREE.CanvasTexture}) => 
+        new THREE.MeshStandardMaterial({ map: textures.map, normalMap: textures.normalMap, normalScale: new THREE.Vector2(1.0, 1.0), roughness: 0.6, metalness: 0.7 });
+
+    const createKeyMaterial = (textures: {map: THREE.CanvasTexture}, color: THREE.Color) =>
+        new THREE.MeshStandardMaterial({ map: textures.map, roughness: 0.4, metalness: 0.5, color, emissive: color, emissiveIntensity: 0.5 });
 
     return {
         wall: {
@@ -38,7 +58,19 @@ export const createMaterials = () => {
             wood: new THREE.MeshStandardMaterial({ map: floorTextures.wood.map, normalMap: floorTextures.wood.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.7, vertexColors: true }),
             dirt: new THREE.MeshStandardMaterial({ map: floorTextures.dirt.map, normalMap: floorTextures.dirt.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.95, vertexColors: true }),
         },
-        door: new THREE.MeshStandardMaterial({ map: doorTexture.map, normalMap: doorTexture.normalMap, normalScale: new THREE.Vector2(1.0, 1.0), roughness: 0.6, metalness: 0.7 }),
+        door: {
+            red: createDoorMaterial(doorTextures.red),
+            green: createDoorMaterial(doorTextures.green),
+            blue: createDoorMaterial(doorTextures.blue),
+            yellow: createDoorMaterial(doorTextures.yellow),
+        },
+        key: {
+            red: createKeyMaterial(keyTextures.red, new THREE.Color('#d32f2f')),
+            green: createKeyMaterial(keyTextures.green, new THREE.Color('#388e3c')),
+            blue: createKeyMaterial(keyTextures.blue, new THREE.Color('#1976d2')),
+            yellow: createKeyMaterial(keyTextures.yellow, new THREE.Color('#fbc02d')),
+        },
+        exitDoor: new THREE.MeshStandardMaterial({ map: exitDoorTexture.map, normalMap: exitDoorTexture.normalMap, emissiveMap: exitDoorTexture.map, emissive: 0xffffff, emissiveIntensity: 0.8, roughness: 0.7, metalness: 0.8 }),
         bone: new THREE.MeshStandardMaterial({ map: boneTexture.map, normalMap: boneTexture.normalMap, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.8 }),
         enemy: {
             scuttlerBody: new THREE.MeshStandardMaterial({ map: chitinTexture.map, normalMap: chitinTexture.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.8 }),
@@ -61,7 +93,7 @@ export const createMaterials = () => {
             transparent: true,
             polygonOffset: true,
             polygonOffsetFactor: -4,
-            depthWrite: false, // Prevents transparent parts from incorrectly occluding objects behind them
+            depthWrite: false,
         }),
         playerLight: new THREE.SpotLight(0xfff0d1, 12, 35, Math.PI / 6, 0.2, 2),
     };

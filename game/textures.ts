@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 
-// Helper to convert a grayscale height map (in a canvas) to a normal map canvas
 const createNormalMapFromHeightMap = (heightCanvas: HTMLCanvasElement, strength: number = 1.0) => {
     const context = heightCanvas.getContext('2d', { willReadFrequently: true })!;
     const width = heightCanvas.width;
@@ -22,24 +21,14 @@ const createNormalMapFromHeightMap = (heightCanvas: HTMLCanvasElement, strength:
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const hl = getHeight(x - 1, y);
-            const hr = getHeight(x + 1, y);
-            const ht = getHeight(x, y - 1);
-            const hb = getHeight(x, y + 1);
-
-            const dzx = (hr - hl) * strength;
-            const dzy = (hb - ht) * strength;
-
-            const z = 1.0;
-            const len = Math.sqrt(dzx * dzx + dzy * dzy + z * z);
-            const vecX = dzx / len;
-            const vecY = dzy / len;
-            const vecZ = z / len;
+            const dzx = (getHeight(x + 1, y) - getHeight(x - 1, y)) * strength;
+            const dzy = (getHeight(x, y + 1) - getHeight(x, y - 1)) * strength;
+            const vec = new THREE.Vector3(-dzx, -dzy, 1.0).normalize();
 
             const i = (y * width + x) * 4;
-            destData[i] = (vecX + 1.0) * 127.5;
-            destData[i + 1] = (vecY + 1.0) * 127.5;
-            destData[i + 2] = (vecZ + 1.0) * 127.5;
+            destData[i] = (vec.x + 1.0) * 127.5;
+            destData[i + 1] = (vec.y + 1.0) * 127.5;
+            destData[i + 2] = (vec.z + 1.0) * 127.5;
             destData[i + 3] = 255;
         }
     }
@@ -47,6 +36,118 @@ const createNormalMapFromHeightMap = (heightCanvas: HTMLCanvasElement, strength:
     normalContext.putImageData(destImageData, 0, 0);
     return normalCanvas;
 };
+
+export const generateKeycardTexture = (color: THREE.Color) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#212121';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = color.getStyle();
+    ctx.fillRect(10, 10, canvas.width - 20, 40);
+
+    ctx.fillStyle = '#fdd835';
+    ctx.fillRect(20, 60, 50, 30);
+
+    ctx.strokeStyle = '#757575';
+    ctx.lineWidth = 2;
+    for(let y=100; y<240; y+=8) {
+        ctx.beginPath();
+        ctx.moveTo(20, y);
+        ctx.lineTo(canvas.width - 20, y);
+        ctx.stroke();
+    }
+    
+    const map = new THREE.CanvasTexture(canvas);
+    return { map };
+};
+
+export const generateColoredDoorTexture = (color: THREE.Color) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 512;
+    const context = canvas.getContext('2d')!;
+    const bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = 256;
+    bumpCanvas.height = 512;
+    const bumpContext = bumpCanvas.getContext('2d')!;
+
+    context.fillStyle = '#455a64';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    bumpContext.fillStyle = '#888888';
+    bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
+    
+    context.strokeStyle = '#263238';
+    context.lineWidth = 16;
+    context.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
+    
+    bumpContext.strokeStyle = '#ffffff';
+    bumpContext.lineWidth = 4;
+    bumpContext.strokeRect(14, 14, canvas.width - 28, canvas.height - 28);
+    bumpContext.strokeStyle = '#000000';
+    bumpContext.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+    context.fillStyle = color.getStyle();
+    context.shadowColor = color.getStyle();
+    context.shadowBlur = 20;
+    context.fillRect(canvas.width/2 - 20, canvas.height/2 - 80, 40, 160);
+    
+    const map = new THREE.CanvasTexture(canvas);
+    const normalCanvas = createNormalMapFromHeightMap(bumpCanvas, 5.0);
+    const normalMap = new THREE.CanvasTexture(normalCanvas);
+
+    return { map, normalMap };
+};
+
+
+export const generateExitDoorTexture = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 512;
+    const context = canvas.getContext('2d')!;
+    const bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = 256;
+    bumpCanvas.height = 512;
+    const bumpContext = bumpCanvas.getContext('2d')!;
+
+    context.fillStyle = '#1a1a1a';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    bumpContext.fillStyle = '#888888';
+    bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
+    
+    context.strokeStyle = '#000000';
+    context.lineWidth = 16;
+    context.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
+    
+    // Glowing Chevrons
+    context.fillStyle = '#4caf50';
+    context.shadowColor = '#4caf50';
+    context.shadowBlur = 20;
+    const chevron = (y: number) => {
+        context.beginPath();
+        context.moveTo(canvas.width / 2, y);
+        context.lineTo(canvas.width / 2 - 40, y + 20);
+        context.lineTo(canvas.width / 2 - 25, y + 20);
+        context.lineTo(canvas.width / 2, y + 10);
+        context.lineTo(canvas.width / 2 + 25, y + 20);
+        context.lineTo(canvas.width / 2 + 40, y + 20);
+        context.closePath();
+        context.fill();
+    };
+    chevron(canvas.height/2 - 50);
+    chevron(canvas.height/2 - 20);
+    chevron(canvas.height/2 + 10);
+
+    const map = new THREE.CanvasTexture(canvas);
+    const normalCanvas = createNormalMapFromHeightMap(bumpCanvas, 5.0);
+    const normalMap = new THREE.CanvasTexture(normalCanvas);
+
+    return { map, normalMap };
+};
+
 
 export const generateBulletDecalTexture = () => {
     const canvas = document.createElement('canvas');
@@ -60,10 +161,9 @@ export const generateBulletDecalTexture = () => {
     bumpCanvas.width = 128;
     bumpCanvas.height = 128;
     const bumpContext = bumpCanvas.getContext('2d')!;
-    bumpContext.fillStyle = '#7f7f7f'; // Neutral grey
+    bumpContext.fillStyle = '#7f7f7f';
     bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
 
-    // Scorch marks
     const scorchGradient = context.createRadialGradient(centerX, centerY, 10, centerX, centerY, 50);
     scorchGradient.addColorStop(0, 'rgba(40, 30, 20, 0.8)');
     scorchGradient.addColorStop(0.5, 'rgba(40, 30, 20, 0.3)');
@@ -71,7 +171,6 @@ export const generateBulletDecalTexture = () => {
     context.fillStyle = scorchGradient;
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Chipped edges
     for(let i=0; i<30; ++i) {
         const angle = Math.random() * Math.PI * 2;
         const dist = 8 + Math.random() * 15;
@@ -83,16 +182,13 @@ export const generateBulletDecalTexture = () => {
         context.beginPath();
         context.arc(x, y, size, 0, Math.PI * 2);
         context.fill();
-
         const bumpVal = 200 + Math.random() * 55;
-        bumpContext.fillStyle = `rgb(${bumpVal},${bumpVal},${bumpVal})`; // raised chunks
+        bumpContext.fillStyle = `rgb(${bumpVal},${bumpVal},${bumpVal})`;
         bumpContext.beginPath();
         bumpContext.arc(x, y, size, 0, Math.PI * 2);
         bumpContext.fill();
     }
 
-
-    // Cracks
     context.strokeStyle = 'rgba(0, 0, 0, 0.7)';
     context.lineWidth = 1;
     bumpContext.strokeStyle = 'rgba(0, 0, 0, 1)';
@@ -108,9 +204,8 @@ export const generateBulletDecalTexture = () => {
         let curY = centerY;
         for (let j = 0; j < 3; j++) {
             const segAngle = angle + (Math.random() - 0.5) * 0.5;
-            const segLength = length / 3;
-            curX += Math.cos(segAngle) * segLength;
-            curY += Math.sin(segAngle) * segLength;
+            curX += Math.cos(segAngle) * length / 3;
+            curY += Math.sin(segAngle) * length / 3;
             context.lineTo(curX, curY);
             bumpContext.lineTo(curX, curY);
         }
@@ -118,7 +213,6 @@ export const generateBulletDecalTexture = () => {
         bumpContext.stroke();
     }
     
-    // Central hole
     const holeGradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, 8);
     holeGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
     holeGradient.addColorStop(0.5, 'rgba(10, 10, 10, 1)');
@@ -128,7 +222,7 @@ export const generateBulletDecalTexture = () => {
     context.arc(centerX, centerY, 8, 0, Math.PI * 2);
     context.fill();
 
-    bumpContext.fillStyle = '#000000'; // Deep hole
+    bumpContext.fillStyle = '#000000';
     bumpContext.beginPath();
     bumpContext.arc(centerX, centerY, 8, 0, Math.PI * 2);
     bumpContext.fill();
@@ -151,14 +245,12 @@ export const generateBarrelTexture = () => {
     bumpCanvas.width = 256;
     bumpCanvas.height = 256;
     const bumpContext = bumpCanvas.getContext('2d')!;
-    bumpContext.fillStyle = '#7f7f7f'; // Neutral grey
+    bumpContext.fillStyle = '#7f7f7f';
     bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
 
-    // Wood background
-    context.fillStyle = '#8B5A2B'; // A wood-like brown
+    context.fillStyle = '#8B5A2B';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw vertical planks
     const plankWidth = 32;
     for (let x = 0; x < canvas.width; x += plankWidth) {
         const colorOffset = Math.floor(Math.random() * 20) - 10;
@@ -166,15 +258,14 @@ export const generateBarrelTexture = () => {
         context.fillRect(x, 0, plankWidth, canvas.height);
         context.fillStyle = 'rgba(0, 0, 0, 0.5)';
         context.fillRect(x - 1, 0, 2, canvas.height);
-        bumpContext.fillStyle = '#222222'; // Indented
+        bumpContext.fillStyle = '#222222';
         bumpContext.fillRect(x - 1, 0, 2, bumpCanvas.height);
     }
     
-    // Draw metal hoops
     context.fillStyle = '#616161';
     context.fillRect(0, canvas.height * 0.1, canvas.width, canvas.height * 0.1);
     context.fillRect(0, canvas.height * 0.8, canvas.width, canvas.height * 0.1);
-    bumpContext.fillStyle = '#ffffff'; // Raised high
+    bumpContext.fillStyle = '#ffffff';
     bumpContext.fillRect(0, bumpCanvas.height * 0.1, bumpCanvas.width, bumpCanvas.height * 0.1);
     bumpContext.fillRect(0, bumpCanvas.height * 0.8, bumpCanvas.width, bumpCanvas.height * 0.1);
 
@@ -255,7 +346,7 @@ export const generateBarrelTopTexture = () => {
     context.beginPath();
     context.arc(centerX, centerY, centerX - 7, 0, Math.PI * 2);
     context.stroke();
-    context.strokeStyle = '#717171'; // highlight
+    context.strokeStyle = '#717171';
     context.lineWidth = 2;
     context.beginPath();
     context.arc(centerX, centerY, centerX - 13, 0, Math.PI * 2);
@@ -593,72 +684,6 @@ export const generateDirtTexture = () => {
     normalMap.wrapT = THREE.RepeatWrapping;
     normalMap.repeat.set(2, 2);
     
-    return { map, normalMap };
-};
-
-export const generateDoorTexture = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 512;
-    const context = canvas.getContext('2d')!;
-
-    const bumpCanvas = document.createElement('canvas');
-    bumpCanvas.width = 256;
-    bumpCanvas.height = 512;
-    const bumpContext = bumpCanvas.getContext('2d')!;
-
-    context.fillStyle = '#455a64';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    bumpContext.fillStyle = '#888888';
-    bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
-
-    context.strokeStyle = '#263238';
-    context.lineWidth = 16;
-    context.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
-    
-    bumpContext.strokeStyle = '#ffffff';
-    bumpContext.lineWidth = 4;
-    bumpContext.strokeRect(14, 14, canvas.width - 28, canvas.height - 28);
-    bumpContext.strokeStyle = '#000000';
-    bumpContext.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
-
-    context.save();
-    context.beginPath();
-    context.moveTo(0, canvas.height * 0.4);
-    context.lineTo(canvas.width, canvas.height * 0.4);
-    context.lineTo(canvas.width, canvas.height * 0.6);
-    context.lineTo(0, canvas.height * 0.6);
-    context.closePath();
-    context.clip();
-
-    context.lineWidth = 30;
-    for (let i = -canvas.width; i < canvas.width * 2; i += 60) {
-        context.strokeStyle = '#fdd835';
-        context.beginPath();
-        context.moveTo(i, -50);
-        context.lineTo(i + canvas.height, canvas.height + 50);
-        context.stroke();
-    }
-    context.restore();
-
-    context.globalAlpha = 0.15;
-    bumpContext.globalAlpha = 0.4;
-    for (let i = 0; i < 200; i++) {
-        const x = Math.random() * canvas.width;
-        const y = Math.random() * canvas.height;
-        const size = 10 + Math.random() * 40;
-        context.fillStyle = 'rgba(0,0,0,0.5)';
-        context.fillRect(x, y, size, size);
-        bumpContext.fillStyle = 'rgba(0,0,0,1)';
-        bumpContext.fillRect(x, y, size, 1);
-    }
-    context.globalAlpha = 1.0;
-    bumpContext.globalAlpha = 1.0;
-
-    const map = new THREE.CanvasTexture(canvas);
-    const normalCanvas = createNormalMapFromHeightMap(bumpCanvas, 5.0);
-    const normalMap = new THREE.CanvasTexture(normalCanvas);
-
     return { map, normalMap };
 };
 
@@ -1001,20 +1026,11 @@ export const generateWoodPlankTexture = (isFloor: boolean = false) => {
             const startY = y + Math.random() * plankHeight;
             context.beginPath();
             context.moveTo(0, startY);
-            context.bezierCurveTo(
-                canvas.width * 0.3, y + Math.random() * plankHeight,
-                canvas.width * 0.7, y + Math.random() * plankHeight,
-                canvas.width, y + Math.random() * plankHeight
-            );
+            context.bezierCurveTo(canvas.width*0.3, y+Math.random()*plankHeight, canvas.width*0.7, y+Math.random()*plankHeight, canvas.width, y+Math.random()*plankHeight);
             context.stroke();
-
             bumpContext.beginPath();
             bumpContext.moveTo(0, startY);
-            bumpContext.bezierCurveTo(
-                bumpCanvas.width * 0.3, y + Math.random() * plankHeight,
-                bumpCanvas.width * 0.7, y + Math.random() * plankHeight,
-                bumpCanvas.width, y + Math.random() * plankHeight
-            );
+            bumpContext.bezierCurveTo(bumpCanvas.width*0.3, y+Math.random()*plankHeight, bumpCanvas.width*0.7, y+Math.random()*plankHeight, bumpCanvas.width, y+Math.random()*plankHeight);
             bumpContext.stroke();
         }
 
@@ -1066,11 +1082,8 @@ export const generatePantsTexture = () => {
 
     const colorType = Math.random();
     let baseColor = '#3d5afe';
-    if (colorType > 0.66) {
-        baseColor = '#8d6e63';
-    } else if (colorType > 0.33) {
-        baseColor = '#616161';
-    }
+    if (colorType > 0.66) baseColor = '#8d6e63';
+    else if (colorType > 0.33) baseColor = '#616161';
 
     context.fillStyle = baseColor;
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -1095,7 +1108,7 @@ export const generatePantsTexture = () => {
     }
     
     context.globalAlpha = 0.1;
-    const gradient = context.createRadialGradient(canvas.width / 2, canvas.height/2, 10, canvas.width/2, canvas.height/2, 150);
+    const gradient = context.createRadialGradient(canvas.width/2, canvas.height/2, 10, canvas.width/2, canvas.height/2, 150);
     gradient.addColorStop(0, 'rgba(255,255,255,0.5)');
     gradient.addColorStop(1, 'rgba(255,255,255,0)');
     context.fillStyle = gradient;
@@ -1136,37 +1149,25 @@ export const generateShirtTexture = () => {
 
     const patternType = Math.random();
 
-    if (patternType < 0.33) { // Vertical Stripes
+    if (patternType < 0.33) {
         const stripeColor = `hsl(${hue}, ${saturation}%, ${lightness - 20}%)`;
         context.strokeStyle = stripeColor;
         context.lineWidth = Math.random() * 10 + 5;
         bumpContext.strokeStyle = '#555555';
         bumpContext.lineWidth = context.lineWidth;
         for (let x = 0; x < canvas.width; x += Math.random() * 30 + 15) {
-            context.beginPath();
-            context.moveTo(x, 0);
-            context.lineTo(x, canvas.height);
-            context.stroke();
-            bumpContext.beginPath();
-            bumpContext.moveTo(x, 0);
-            bumpContext.lineTo(x, canvas.height);
-            bumpContext.stroke();
+            context.beginPath(); context.moveTo(x, 0); context.lineTo(x, canvas.height); context.stroke();
+            bumpContext.beginPath(); bumpContext.moveTo(x, 0); bumpContext.lineTo(x, canvas.height); bumpContext.stroke();
         }
-    } else if (patternType < 0.66) { // Horizontal Stripes
+    } else if (patternType < 0.66) {
         const stripeColor = `hsl(${hue}, ${saturation}%, ${lightness + 20}%)`;
         context.strokeStyle = stripeColor;
         context.lineWidth = Math.random() * 10 + 5;
         bumpContext.strokeStyle = '#aaaaaa';
         bumpContext.lineWidth = context.lineWidth;
         for (let y = 0; y < canvas.height; y += Math.random() * 30 + 15) {
-            context.beginPath();
-            context.moveTo(0, y);
-            context.lineTo(canvas.width, y);
-            context.stroke();
-            bumpContext.beginPath();
-            bumpContext.moveTo(0, y);
-            bumpContext.lineTo(canvas.width, y);
-            bumpContext.stroke();
+            context.beginPath(); context.moveTo(0, y); context.lineTo(canvas.width, y); context.stroke();
+            bumpContext.beginPath(); bumpContext.moveTo(0, y); bumpContext.lineTo(canvas.width, y); bumpContext.stroke();
         }
     }
 
@@ -1248,15 +1249,13 @@ export const generateChitinTexture = () => {
     bumpCanvas.height = 256;
     const bumpContext = bumpCanvas.getContext('2d')!;
 
-    // Base color
-    const hue = 30 + Math.random() * 60; // Browns, greens, yellows
+    const hue = 30 + Math.random() * 60;
     const baseColor = `hsl(${hue}, 40%, 20%)`;
     context.fillStyle = baseColor;
     context.fillRect(0, 0, canvas.width, canvas.height);
     bumpContext.fillStyle = '#7f7f7f';
     bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
 
-    // Plate segments
     context.strokeStyle = `hsl(${hue}, 40%, 10%)`;
     context.lineWidth = 3;
     bumpContext.strokeStyle = '#222222';
@@ -1264,15 +1263,14 @@ export const generateChitinTexture = () => {
     for (let y = 0; y < canvas.height; y += 40 + Math.random() * 20) {
         context.beginPath();
         context.moveTo(0, y);
-        context.bezierCurveTo(canvas.width * 0.3, y + (Math.random()-0.5) * 20, canvas.width * 0.7, y + (Math.random()-0.5) * 20, canvas.width, y);
+        context.bezierCurveTo(canvas.width*0.3, y+(Math.random()-0.5)*20, canvas.width*0.7, y+(Math.random()-0.5)*20, canvas.width, y);
         context.stroke();
         bumpContext.beginPath();
         bumpContext.moveTo(0, y);
-        bumpContext.bezierCurveTo(canvas.width * 0.3, y + (Math.random()-0.5) * 20, canvas.width * 0.7, y + (Math.random()-0.5) * 20, canvas.width, y);
+        bumpContext.bezierCurveTo(canvas.width*0.3, y+(Math.random()-0.5)*20, canvas.width*0.7, y+(Math.random()-0.5)*20, canvas.width, y);
         bumpContext.stroke();
     }
     
-    // Mottled noise
     for (let i = 0; i < 10000; i++) {
         const x = Math.random() * canvas.width;
         const y = Math.random() * canvas.height;
@@ -1308,33 +1306,20 @@ export const generateDroneTexture = () => {
     bumpCanvas.height = 256;
     const bumpContext = bumpCanvas.getContext('2d')!;
 
-    // Base metal color
     context.fillStyle = '#37474f';
     context.fillRect(0, 0, canvas.width, canvas.height);
     bumpContext.fillStyle = '#cccccc';
     bumpContext.fillRect(0, 0, bumpCanvas.width, bumpCanvas.height);
 
-    // Panel lines
     context.strokeStyle = '#1a2327';
     context.lineWidth = 2;
     bumpContext.strokeStyle = '#222222';
     bumpContext.lineWidth = 2;
     for (let i = 0; i < 5; i++) {
-        context.strokeRect(
-            Math.random() * canvas.width, 
-            Math.random() * canvas.height, 
-            Math.random() * 100, 
-            Math.random() * 100
-        );
-        bumpContext.strokeRect(
-            Math.random() * canvas.width, 
-            Math.random() * canvas.height, 
-            Math.random() * 100, 
-            Math.random() * 100
-        );
+        context.strokeRect(Math.random()*canvas.width, Math.random()*canvas.height, Math.random()*100, Math.random()*100);
+        bumpContext.strokeRect(Math.random()*canvas.width, Math.random()*canvas.height, Math.random()*100, Math.random()*100);
     }
     
-    // Scratches
     context.globalAlpha = 0.3;
     context.strokeStyle = 'rgba(255,255,255,0.2)';
     context.lineWidth = 0.5;
@@ -1345,14 +1330,8 @@ export const generateDroneTexture = () => {
         const y = Math.random() * canvas.height;
         const endX = x + (Math.random()-0.5)*30;
         const endY = y + (Math.random()-0.5)*30;
-        context.beginPath();
-        context.moveTo(x, y);
-        context.lineTo(endX, endY);
-        context.stroke();
-        bumpContext.beginPath();
-        bumpContext.moveTo(x, y);
-        bumpContext.lineTo(endX, endY);
-        bumpContext.stroke();
+        context.beginPath(); context.moveTo(x, y); context.lineTo(endX, endY); context.stroke();
+        bumpContext.beginPath(); bumpContext.moveTo(x, y); bumpContext.lineTo(endX, endY); bumpContext.stroke();
     }
     context.globalAlpha = 1.0;
 

@@ -3,12 +3,14 @@ import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, WALL_HEIGHT } from './constants';
 
 function addVertexColors(geometry: THREE.BufferGeometry, lightPositions: THREE.Vector3[]) {
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
     const positions = geometry.attributes.position;
     const colors = [];
     const vertex = new THREE.Vector3();
-    const ambientLight = 0.15; // Minimum brightness in dark areas
+    const ambientLight = 0.15;
     const lightRange = TILE_SIZE * 4;
-    const lightStrength = 1.2; // Increased for more intensity
+    const lightStrength = 1.2;
 
     for (let i = 0; i < positions.count; i++) {
         vertex.fromBufferAttribute(positions, i);
@@ -17,7 +19,6 @@ function addVertexColors(geometry: THREE.BufferGeometry, lightPositions: THREE.V
         if (lightPositions.length > 0) {
             for (const lightPos of lightPositions) {
                 const distance = vertex.distanceTo(lightPos);
-                // Use a gentler falloff (exponent 1.8 instead of 2) for a wider, brighter area
                 const intensity = Math.pow(Math.max(0, 1 - distance / lightRange), 1.8) * lightStrength;
                 if (intensity > maxIntensity) {
                     maxIntensity = intensity;
@@ -33,10 +34,10 @@ function addVertexColors(geometry: THREE.BufferGeometry, lightPositions: THREE.V
 
 export function buildLevel(
     levelContainer: THREE.Group,
-    levelData: { grid: number[][], rooms: any[], doorLocations: any[] },
+    levelData: { grid: number[][], rooms: any[], doors: any[], keys: any[], exit: any },
     materials: any
 ) {
-    const { grid, rooms, doorLocations } = levelData;
+    const { grid, rooms, doors: doorLocations, keys: keyLocations, exit: exitLocation } = levelData;
 
     const floorTiles: {x: number, z: number}[] = [];
     const roomMap = Array(MAP_WIDTH).fill(null).map(() => Array(MAP_HEIGHT).fill(-1));
@@ -53,10 +54,9 @@ export function buildLevel(
         }
     });
     
-    // Pre-calculate all lamp positions for baking
     const lampPositions: THREE.Vector3[] = [];
     rooms.forEach(room => {
-        const lampCount = Math.max(1, Math.floor((room.width * room.height) / 12));
+        const lampCount = Math.max(1, Math.floor((room.width * room.height) / 20));
         for (let i = 0; i < lampCount; i++) {
             const tileX = room.x + Math.floor(Math.random() * room.width);
             const tileZ = room.y + Math.floor(Math.random() * room.height);
@@ -68,10 +68,9 @@ export function buildLevel(
 
     const wallGeometry = new THREE.BoxGeometry(TILE_SIZE, WALL_HEIGHT, TILE_SIZE);
     const matrix = new THREE.Matrix4();
-    const wallMatrices: { [key: string]: THREE.Matrix4[] } = { brick: [], wood: [], stone: [], metal: [], concrete: [] };
-    const floorGeometries: { [key: string]: THREE.BufferGeometry[] } = { cement: [], wood: [], dirt: [] };
-    const ceilingGeometries: { [key: string]: THREE.BufferGeometry[] } = { cement: [], wood: [], dirt: [] };
-
+    const wallMatrices: { [key: string]: THREE.Matrix4[] } = Object.fromEntries(wallThemeNames.map(name => [name, []]));
+    const floorGeometries: { [key: string]: THREE.BufferGeometry[] } = Object.fromEntries(floorThemeNames.map(name => [name, []]));
+    const ceilingGeometries: { [key: string]: THREE.BufferGeometry[] } = Object.fromEntries(floorThemeNames.map(name => [name, []]));
 
     for (let i = 0; i < MAP_WIDTH; i++) {
         for (let j = 0; j < MAP_HEIGHT; j++) {
@@ -82,14 +81,12 @@ export function buildLevel(
                 floorTiles.push({ x: i, z: j });
                 let tileFloorTheme = roomMap[i][j] !== -1 ? rooms[roomMap[i][j]].floorTheme! : 'cement';
                 
-                // Create floor geometry, apply vertex colors, and add to list for merging
                 const floorGeom = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
                 floorGeom.rotateX(-Math.PI / 2);
                 floorGeom.translate(worldX, 0, worldZ);
                 addVertexColors(floorGeom, lampPositions);
                 floorGeometries[tileFloorTheme].push(floorGeom);
                 
-                // Create ceiling geometry, apply vertex colors, and add to list for merging
                 const ceilingGeom = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
                 ceilingGeom.rotateX(Math.PI / 2);
                 ceilingGeom.translate(worldX, WALL_HEIGHT, worldZ);
@@ -114,7 +111,6 @@ export function buildLevel(
         }
     }
 
-    // Create instanced meshes for walls (still efficient)
     for (const theme of wallThemeNames) {
         if (wallMatrices[theme].length > 0) {
             const instancedMesh = new THREE.InstancedMesh(wallGeometry, materials.wall[theme], wallMatrices[theme].length);
@@ -123,7 +119,6 @@ export function buildLevel(
         }
     }
     
-    // Create merged meshes for floors and ceilings (efficient)
     for (const theme of floorThemeNames) {
         if (floorGeometries[theme].length > 0) {
             const mergedFloorGeom = BufferGeometryUtils.mergeGeometries(floorGeometries[theme]);
@@ -137,43 +132,19 @@ export function buildLevel(
         }
     }
 
-
-    // Clutter and Lamp Models
-    const clutterContainer = new THREE.Group();
-    levelContainer.add(clutterContainer);
-    
-    // Add lamp bulb models at the pre-calculated positions
     lampPositions.forEach(pos => {
-        const lampGroup = new THREE.Group();
         const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), materials.clutter.lampBulb);
-        // The light is baked, so we only need the visual bulb
-        lampGroup.add(bulb);
-        lampGroup.position.copy(pos);
-        lampGroup.position.y += 0.5; // Adjust to hang from ceiling
-        clutterContainer.add(lampGroup);
+        bulb.position.copy(pos);
+        bulb.position.y += 0.5;
+        levelContainer.add(bulb);
     });
 
-    rooms.forEach(room => {
-        const clutterCount = 1 + Math.floor(Math.random() * 3);
-        for (let i = 0; i < clutterCount; i++) {
-            const tileX = room.x + Math.floor(Math.random() * room.width);
-            const tileZ = room.y + Math.floor(Math.random() * room.height);
-            const worldX = (tileX - MAP_WIDTH / 2) * TILE_SIZE;
-            const worldZ = (tileZ - MAP_HEIGHT / 2) * TILE_SIZE;
-            const debrisGeom = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const debris = new THREE.Mesh(debrisGeom, materials.clutter.debris);
-            debris.position.set(worldX, 0.25, worldZ);
-            clutterContainer.add(debris);
-        }
-    });
-
-    // Doors
     const doors: THREE.Mesh[] = [];
     const doorGeom = new THREE.BoxGeometry(TILE_SIZE, WALL_HEIGHT, 0.5);
-    doorLocations.forEach((loc: { x: number, y: number, orientation: string }) => {
+    doorLocations.forEach((loc: { x: number, y: number, orientation: string, color: string }) => {
         const worldX = (loc.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2;
         const worldZ = (loc.y - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2;
-        const door = new THREE.Mesh(doorGeom, materials.door);
+        const door = new THREE.Mesh(doorGeom, materials.door[loc.color]);
         door.position.set(worldX, WALL_HEIGHT / 2, worldZ);
         if (loc.orientation === 'horizontal') {
             door.rotation.y = Math.PI / 2;
@@ -184,10 +155,36 @@ export function buildLevel(
             state: 'closed',
             openY: WALL_HEIGHT * 1.5 - 0.1,
             closedY: WALL_HEIGHT / 2,
+            color: loc.color,
         };
         levelContainer.add(door);
         doors.push(door);
     });
 
-    return { floorTiles, doors };
+    const keys: THREE.Group[] = [];
+    const keyGeom = new THREE.BoxGeometry(0.5, 0.8, 0.05);
+    keyLocations.forEach((loc: { x: number, y: number, color: string }) => {
+        const worldX = (loc.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2;
+        const worldZ = (loc.y - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2;
+        const keyGroup = new THREE.Group();
+        const keyMesh = new THREE.Mesh(keyGeom, materials.key[loc.color]);
+        keyGroup.add(keyMesh);
+        
+        const light = new THREE.PointLight(materials.key[loc.color].color, 5, 4);
+        keyGroup.add(light);
+
+        keyGroup.position.set(worldX, 1.5, worldZ);
+        keyGroup.userData = { color: loc.color };
+        levelContainer.add(keyGroup);
+        keys.push(keyGroup);
+    });
+    
+    const exitGeom = new THREE.BoxGeometry(TILE_SIZE, WALL_HEIGHT, 0.5);
+    const exitMesh = new THREE.Mesh(exitGeom, materials.exitDoor);
+    const exitWorldX = (exitLocation.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2;
+    const exitWorldZ = (exitLocation.y - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2;
+    exitMesh.position.set(exitWorldX, WALL_HEIGHT / 2, exitWorldZ);
+    levelContainer.add(exitMesh);
+
+    return { floorTiles, doors, keys, exitMesh };
 }

@@ -138,29 +138,28 @@ export default class EnemyManager {
             type: 'sentinel',
             state: 'attacking',
             lastShotTime: 0,
-            shotCooldown: 200, // Time between shots in a burst
+            shotCooldown: 200,
             shotsInBurst: 3,
             shotsFiredInBurst: 0,
             burstCooldown: 4000,
             lastBurstTime: performance.now(),
-            soundProfile: {
-                baseFrequency: 300,
-                pitchDrop: 250,
-                noiseDuration: 0.1,
-                gain: 0.2,
-            },
+            soundProfile: { baseFrequency: 300, pitchDrop: 250, noiseDuration: 0.1, gain: 0.2 },
             animationOffset: Math.random() * Math.PI * 2,
+            idealRangeMin: 8,
+            idealRangeMax: 15,
+            strafeDirection: (Math.random() < 0.5 ? 1 : -1),
+            strafeTimer: Math.random() * 3 + 1,
         };
         enemy.position.set(
             (tile.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2,
-            2.5, // Fly
+            2.5,
             (tile.z - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2
         );
         return enemy;
     }
 
 
-    spawnEnemies(floorTiles: { x: number, z: number }[], playerSpawnTile: { x: number, z: number }, grid: number[][]) {
+    spawnEnemies(floorTiles: { x: number, z: number }[], playerSpawnTile: { x: number, y: number }, grid: number[][]) {
         const isSafe = (tile: { x: number, z: number }) => {
             const { x, z } = tile;
             if (grid[x]?.[z] !== 1) return false;
@@ -171,22 +170,21 @@ export default class EnemyManager {
             return true;
         };
         const safeSpawnTiles = floorTiles.filter(isSafe);
-        // Fallback to all floor tiles if there are not enough "safe" spots
         const spawnableTiles = safeSpawnTiles.length > 5 ? safeSpawnTiles : floorTiles;
 
         const numEnemies = Math.floor(spawnableTiles.length / 15);
         for (let i = 0; i < numEnemies; i++) {
             const tile = spawnableTiles[Math.floor(Math.random() * spawnableTiles.length)];
-            if (tile === playerSpawnTile) continue;
+            if (tile.x === playerSpawnTile.x && tile.z === playerSpawnTile.y) continue;
 
             const enemyTypeRoll = Math.random();
             let enemy;
             
-            if (enemyTypeRoll < 0.5) { // 50% Skeleton
+            if (enemyTypeRoll < 0.5) {
                 enemy = this.spawnSkeleton(tile);
-            } else if (enemyTypeRoll < 0.8) { // 30% Scuttler
+            } else if (enemyTypeRoll < 0.8) {
                 enemy = this.spawnScuttler(tile);
-            } else { // 20% Sentinel
+            } else {
                 enemy = this.spawnSentinel(tile);
             }
 
@@ -214,10 +212,10 @@ export default class EnemyManager {
         const shouldMiss = enemy.userData.shotsFired < 2 || Math.random() > 0.7;
         if (shouldMiss) {
             const inaccuracy = 0.3;
-            const randomAngleX = (Math.random() - 0.5) * inaccuracy;
-            const randomAngleY = (Math.random() - 0.5) * inaccuracy;
-            direction.applyAxisAngle(new THREE.Vector3(1,0,0), randomAngleX);
-            direction.applyAxisAngle(new THREE.Vector3(0,1,0), randomAngleY);
+            direction.x += (Math.random() - 0.5) * inaccuracy;
+            direction.y += (Math.random() - 0.5) * inaccuracy;
+            direction.z += (Math.random() - 0.5) * inaccuracy;
+            direction.normalize();
         }
         
         enemy.userData.shotsFired++;
@@ -248,7 +246,7 @@ export default class EnemyManager {
         
         const direction = playerPosition.clone().sub(startPosition).normalize();
         
-        bullet.userData.velocity = direction.multiplyScalar(20); // Slower projectiles
+        bullet.userData.velocity = direction.multiplyScalar(20);
         bullet.userData.type = 'sentinel';
         
         this.scene.add(bullet);
@@ -270,7 +268,7 @@ export default class EnemyManager {
             
             if (!hit && (isCollision(bullet.position.x, bullet.position.z) || bullet.position.y < 0)) {
                 hit = true;
-                 if (bullet.position.y > 0) { // Don't decal the floor
+                 if (bullet.position.y > 0) {
                     hitPoints.push({ position: bullet.position.clone(), velocity: bullet.userData.velocity.clone() });
                 }
             }
@@ -290,11 +288,10 @@ export default class EnemyManager {
     private hasLineOfSight(enemy: THREE.Group, playerPosition: THREE.Vector3, levelContainer: THREE.Group): boolean {
         const eyePosition = new THREE.Vector3();
         
-        const eyeObject = enemy.getObjectByName('eye');
+        const eyeObject = enemy.getObjectByName('eye') || enemy.getObjectByName('head');
         if (eyeObject) {
             eyeObject.getWorldPosition(eyePosition);
         } else {
-            // Approximate eye position for skeletons
             eyePosition.copy(enemy.position).y += 1.6;
         }
 
@@ -302,10 +299,8 @@ export default class EnemyManager {
         this.raycaster.set(eyePosition, direction);
         
         const intersects = this.raycaster.intersectObject(levelContainer, true);
-        
         const distanceToPlayer = eyePosition.distanceTo(playerPosition);
         
-        // If there's an intersection and it's closer than the player, vision is blocked.
         if (intersects.length > 0 && intersects[0].distance < distanceToPlayer) {
             return false;
         }
@@ -336,35 +331,29 @@ export default class EnemyManager {
             let shouldMove = false;
             let moveDirection = 1;
 
-            if (distanceToPlayer > enemy.userData.idealRangeMax) {
-                shouldMove = true;
-                moveDirection = 1;
-            } else if (distanceToPlayer < enemy.userData.idealRangeMin) {
-                shouldMove = true;
-                moveDirection = -1;
-            }
+            if (distanceToPlayer > enemy.userData.idealRangeMax) { shouldMove = true; moveDirection = 1; }
+            else if (distanceToPlayer < enemy.userData.idealRangeMin) { shouldMove = true; moveDirection = -1; }
 
             if (shouldMove) {
                 const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(enemy.quaternion);
-                
                 const nextX = enemy.position.x + forward.x * moveStep * moveDirection;
                 const nextZ = enemy.position.z + forward.z * moveStep * moveDirection;
-
                 if (!isCollision(nextX, enemy.position.z)) enemy.position.x = nextX;
                 if (!isCollision(enemy.position.x, nextZ)) enemy.position.z = nextZ;
-
-                const phase = time / 1000 * walkCycleSpeed + enemy.userData.animationOffset;
-                if(leftLeg) leftLeg.rotation.x = -Math.sin(phase) * limbSwingAmount;
-                if(rightLeg) rightLeg.rotation.x = Math.sin(phase) * limbSwingAmount;
-                enemy.position.y = Math.sin(phase * 2) * bobAmount;
             }
+            
+            const phase = time / 1000 * walkCycleSpeed + enemy.userData.animationOffset;
+            const movePhase = shouldMove ? phase : 0;
+            if(leftLeg) leftLeg.rotation.x = -Math.sin(movePhase) * limbSwingAmount;
+            if(rightLeg) rightLeg.rotation.x = Math.sin(movePhase) * limbSwingAmount;
+            enemy.position.y = shouldMove ? Math.sin(phase * 2) * bobAmount : 0;
             
             const canSeePlayer = this.hasLineOfSight(enemy, playerPosition, levelContainer);
             if (canSeePlayer && time > enemy.userData.lastShotTime + enemy.userData.shotCooldown) {
                 enemy.userData.lastShotTime = time;
                 this.shootAtPlayer(enemy, playerPosition);
             }
-        } else { // Melee Logic
+        } else { // Melee
             if (enemy.userData.state === 'chasing' && distanceToPlayer <= enemy.userData.attackRange && time > enemy.userData.lastAttackTime + (enemy.userData.attackSpeed * 1000)) {
                 enemy.userData.state = 'attacking';
                 enemy.userData.lastAttackTime = time;
@@ -372,12 +361,9 @@ export default class EnemyManager {
             }
 
             if (enemy.userData.state === 'attacking') {
-                const attackDuration = 500;
                 const timeSinceAttack = time - enemy.userData.lastAttackTime;
-
-                if (timeSinceAttack < attackDuration) {
-                    const attackProgress = timeSinceAttack / attackDuration;
-                    const swingAngle = Math.sin(attackProgress * Math.PI) * -Math.PI / 1.5;
+                if (timeSinceAttack < 500) {
+                    const swingAngle = Math.sin(timeSinceAttack / 500 * Math.PI) * -Math.PI / 1.5;
                     if (leftArm) leftArm.rotation.x = swingAngle;
                     if (rightArm) rightArm.rotation.x = swingAngle;
                 } else {
@@ -387,16 +373,12 @@ export default class EnemyManager {
                 if (enemy.userData.attackAnimTimer > 0) {
                     enemy.userData.attackAnimTimer -= delta;
                     if (enemy.userData.attackAnimTimer <= 0) {
-                        if (enemy.position.distanceTo(playerPosition) <= enemy.userData.attackRange) {
+                        if (enemy.position.distanceTo(playerPosition) <= enemy.userData.attackRange + 0.5) {
                             player.takeDamage(enemy.userData.attackDamage);
                         }
                     }
                 }
-                
-                const lookAtPosition = new THREE.Vector3().copy(playerPosition);
-                lookAtPosition.y = enemy.position.y + 1.5;
-                enemy.lookAt(lookAtPosition);
-            } else { // Chasing state
+            } else { // Chasing
                 const phase = time / 1000 * walkCycleSpeed + enemy.userData.animationOffset;
                 if(leftArm) leftArm.rotation.x = Math.sin(phase) * limbSwingAmount;
                 if(rightArm) rightArm.rotation.x = -Math.sin(phase) * limbSwingAmount;
@@ -404,11 +386,10 @@ export default class EnemyManager {
                 if(rightLeg) rightLeg.rotation.x = Math.sin(phase) * limbSwingAmount;
                 enemy.position.y = Math.sin(phase * 2) * bobAmount;
 
-                const lookAtPosition = new THREE.Vector3().copy(playerPosition);
-                lookAtPosition.y = enemy.position.y + 1.5;
-                enemy.lookAt(lookAtPosition);
-                
                 if (distanceToPlayer > 2) {
+                    const lookAtPosition = new THREE.Vector3().copy(playerPosition);
+                    lookAtPosition.y = enemy.position.y + 1.5;
+                    enemy.lookAt(lookAtPosition);
                     const skeletonSpeed = 1.2;
                     const moveStep = skeletonSpeed * delta;
                     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(enemy.quaternion);
@@ -430,14 +411,11 @@ export default class EnemyManager {
         lookAtPosition.y = enemy.position.y;
         enemy.lookAt(lookAtPosition);
         
-        // Attack logic
         if (distanceToPlayer < enemy.userData.attackRange && time > enemy.userData.lastAttackTime + enemy.userData.attackCooldown) {
             enemy.userData.lastAttackTime = time;
             player.takeDamage(enemy.userData.attackDamage);
-            // TODO: Lunge animation
         }
         
-        // Movement logic
         if (distanceToPlayer > 1.5) {
             const speed = 4.0;
             const moveStep = speed * delta;
@@ -445,14 +423,12 @@ export default class EnemyManager {
             const forward = new THREE.Vector3(0,0,1).applyQuaternion(enemy.quaternion);
             const right = new THREE.Vector3(1,0,0).applyQuaternion(enemy.quaternion);
 
-            // Strafe timer
             enemy.userData.strafeTimer -= delta;
             if (enemy.userData.strafeTimer <= 0) {
                 enemy.userData.strafeDirection *= -1;
                 enemy.userData.strafeTimer = 1 + Math.random() * 2;
             }
 
-            // Combine forward and strafe movement
             const moveDirection = forward.add(right.multiplyScalar(enemy.userData.strafeDirection * 0.5)).normalize();
             
             const nextX = enemy.position.x + moveDirection.x * moveStep;
@@ -462,7 +438,6 @@ export default class EnemyManager {
             if (!isCollision(enemy.position.x, nextZ)) enemy.position.z = nextZ;
         }
 
-        // Animation
         const phase = time / 1000 * 15 + enemy.userData.animationOffset;
         for(let i=0; i<6; ++i) {
             const leg = enemy.getObjectByName(`leg${i}`);
@@ -475,17 +450,38 @@ export default class EnemyManager {
     
     private updateSentinel(enemy: THREE.Group, delta: number, player: Player, isCollision: (x: number, z: number) => boolean, time: number, levelContainer: THREE.Group) {
         const playerPosition = player.camera.position;
-        const eye = enemy.getObjectByName('eye');
-        if (eye) {
-            eye.lookAt(playerPosition);
+        
+        enemy.lookAt(playerPosition);
+        
+        const phase = time / 1000 * 0.8 + enemy.userData.animationOffset;
+        
+        const speed = 1.5;
+        const moveStep = speed * delta;
+        let moveDirection = new THREE.Vector3();
+        const distanceToPlayer = enemy.position.distanceTo(playerPosition);
+        
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(enemy.quaternion);
+        if (distanceToPlayer > enemy.userData.idealRangeMax) { moveDirection.add(forward); }
+        else if (distanceToPlayer < enemy.userData.idealRangeMin) { moveDirection.sub(forward); }
+        
+        enemy.userData.strafeTimer -= delta;
+        if (enemy.userData.strafeTimer <= 0) {
+            enemy.userData.strafeDirection *= -1;
+            enemy.userData.strafeTimer = Math.random() * 3 + 2;
+        }
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(enemy.quaternion);
+        moveDirection.add(right.multiplyScalar(enemy.userData.strafeDirection));
+        
+        if (moveDirection.lengthSq() > 0) {
+            moveDirection.normalize();
+            const nextX = enemy.position.x + moveDirection.x * moveStep;
+            const nextZ = enemy.position.z + moveDirection.z * moveStep;
+            if (!isCollision(nextX, enemy.position.z)) enemy.position.x = nextX;
+            if (!isCollision(enemy.position.x, nextZ)) enemy.position.z = nextZ;
         }
         
-        // Bobbing animation
-        const phase = time / 1000 * 0.8 + enemy.userData.animationOffset;
-        enemy.position.y = 2.5 + Math.sin(phase) * 0.2;
-        enemy.rotation.y += delta * 0.1;
+        enemy.position.y = 2.5 + Math.sin(phase) * 0.4;
         
-        // Shooting logic
         const canSeePlayer = this.hasLineOfSight(enemy, playerPosition, levelContainer);
         if (canSeePlayer && time > enemy.userData.lastBurstTime + enemy.userData.burstCooldown) {
             if (time > enemy.userData.lastShotTime + enemy.userData.shotCooldown) {
@@ -501,8 +497,7 @@ export default class EnemyManager {
     }
 
     update(delta: number, player: Player, isCollision: (x: number, z: number) => boolean, time: number, levelContainer: THREE.Group) {
-        // --- Enemy-to-Enemy Separation ---
-        const enemyRadius = 1.0; // Give them personal space
+        const enemyRadius = 1.0;
         for (let i = 0; i < this.enemies.length; i++) {
             for (let j = i + 1; j < this.enemies.length; j++) {
                 const enemyA = this.enemies[i];
@@ -512,7 +507,7 @@ export default class EnemyManager {
                 
                 if (distance < enemyRadius * 2) {
                     const separationVector = new THREE.Vector3().subVectors(enemyA.position, enemyB.position).normalize();
-                    const separationAmount = (enemyRadius * 2 - distance) * 0.5;
+                    const separationAmount = (enemyRadius * 2 - distance) * 0.5 * delta * 5;
                     
                     const nextAPosX = enemyA.position.x + separationVector.x * separationAmount;
                     const nextAPosZ = enemyA.position.z + separationVector.z * separationAmount;
@@ -531,7 +526,6 @@ export default class EnemyManager {
             }
         }
 
-        // --- Individual Enemy Updates ---
         this.enemies.forEach((enemy: THREE.Group) => {
             const type = enemy.userData.type;
             if (type.startsWith('skeleton')) {
@@ -546,13 +540,21 @@ export default class EnemyManager {
 
     checkHit(bulletPosition: THREE.Vector3): THREE.Group | null {
         for (const enemy of this.enemies) {
-            const hitBody = enemy.getObjectByName('torso') || enemy.getObjectByName('body');
-            if (hitBody) {
-                const torsoPosition = hitBody.getWorldPosition(new THREE.Vector3());
-                const hitRadius = enemy.userData.type === 'sentinel' ? 1.2 : 1.0;
-                if (bulletPosition.distanceTo(torsoPosition) < hitRadius) {
-                    return enemy;
-                }
+            // Use a cylindrical bounding volume for more accurate hit detection.
+            const hitRadius = enemy.userData.type === 'sentinel' ? 0.8 : 0.6;
+            const enemyHeight = enemy.userData.type === 'sentinel' ? 1.5 : 2.2;
+            // Sentinels float, so their base Y is relative to their position. Others are on the ground (y=0).
+            const enemyBaseY = enemy.userData.type === 'sentinel' ? enemy.position.y - (enemyHeight / 2) : 0;
+    
+            const distanceXZ = Math.sqrt(
+                Math.pow(bulletPosition.x - enemy.position.x, 2) +
+                Math.pow(bulletPosition.z - enemy.position.z, 2)
+            );
+    
+            if (distanceXZ < hitRadius && 
+                bulletPosition.y >= enemyBaseY && 
+                bulletPosition.y <= enemyBaseY + enemyHeight) {
+                return enemy;
             }
         }
         return null;
@@ -586,25 +588,7 @@ export default class EnemyManager {
     clearEnemies() {
         this.enemyBullets.forEach(b => this.scene.remove(b));
         this.enemyBullets = [];
-        this.enemies.forEach(enemy => {
-            enemy.traverse((child) => {
-                if (child instanceof THREE.Mesh) {
-                    child.geometry.dispose();
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach(m => {
-                            if (m.map) m.map.dispose();
-                            if ((m as any).normalMap) (m as any).normalMap.dispose();
-                            m.dispose();
-                        });
-                    } else if (child.material) {
-                        if (child.material.map) child.material.map.dispose();
-                        if ((child.material as any).normalMap) (child.material as any).normalMap.dispose();
-                        child.material.dispose();
-                    }
-                }
-            });
-            this.scene.remove(enemy);
-        });
+        this.enemies.forEach(enemy => this.scene.remove(enemy));
         this.enemies = [];
     }
 }

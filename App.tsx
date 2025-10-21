@@ -1,6 +1,15 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-// FIX: Changed import to default for Game class
 import Game, { GameState } from './game/Game';
+
+const KeyInventoryUI = ({ playerKeys }) => (
+  <div className="key-inventory">
+    {playerKeys.red !== undefined && <div className={`key-icon red ${playerKeys.red ? 'collected' : ''}`} />}
+    {playerKeys.green !== undefined && <div className={`key-icon green ${playerKeys.green ? 'collected' : ''}`} />}
+    {playerKeys.blue !== undefined && <div className={`key-icon blue ${playerKeys.blue ? 'collected' : ''}`} />}
+    {playerKeys.yellow !== undefined && <div className={`key-icon yellow ${playerKeys.yellow ? 'collected' : ''}`} />}
+  </div>
+);
+
 
 const GameUI = ({
   gameState,
@@ -15,6 +24,7 @@ const GameUI = ({
   playerHealth,
   playerMaxHealth,
   damageTaken,
+  playerKeys,
 }) => {
   const gun = playerGuns[currentGunIndex];
   
@@ -23,9 +33,9 @@ const GameUI = ({
       {gameState === 'playing' && <div className="crosshair" />}
       {damageTaken && <div className="damage-indicator" />}
 
-      {(gameState === 'menu' || gameState === 'generating' || gameState === 'preview') && (
+      {(gameState === 'menu' || gameState === 'generating' || gameState === 'preview' || gameState === 'won') && (
         <div className="overlay">
-          <h1>3D Procedural Shooter</h1>
+          <h1>{gameState === 'won' ? 'You Escaped!' : '3D Procedural Shooter'}</h1>
           <p>{subtitle}</p>
           <div className="menu-buttons">
             <button onClick={onGenerate} disabled={gameState === 'generating'}>
@@ -45,6 +55,8 @@ const GameUI = ({
               <canvas ref={mapCanvasRef} className="map-canvas" width="200" height="200"></canvas>
             </div>
           )}
+          
+          <KeyInventoryUI playerKeys={playerKeys} />
          
           <div className={`gun-container ${isMoving ? 'gun-bob' : ''}`}>
              {gun && <img className="gun-sprite" src={gun.sprite} alt="Player's weapon" />}
@@ -80,6 +92,7 @@ function App() {
   const [currentGunIndex, setCurrentGunIndex] = useState<number>(0);
   const [isMapVisible, setMapVisible] = useState(false);
   const [isMoving, setMoving] = useState(false);
+  const [playerKeys, setPlayerKeys] = useState({});
   
   const [playerHealth, setPlayerHealth] = useState(100);
   const [playerMaxHealth, setPlayerMaxHealth] = useState(100);
@@ -95,6 +108,7 @@ function App() {
     if(data?.isMoving !== undefined) setMoving(data.isMoving);
     if(data?.playerHealth !== undefined) setPlayerHealth(data.playerHealth);
     if(data?.playerMaxHealth !== undefined) setPlayerMaxHealth(data.playerMaxHealth);
+    if(data?.playerKeys) setPlayerKeys(data.playerKeys);
 
     if (newState === 'playing') {
       const gunSprite = document.querySelector('.gun-sprite') as HTMLImageElement;
@@ -165,6 +179,7 @@ function App() {
         playerHealth={playerHealth}
         playerMaxHealth={playerMaxHealth}
         damageTaken={damageTaken}
+        playerKeys={playerKeys}
       />
     </>
   );

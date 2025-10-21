@@ -7,14 +7,15 @@ import { buildLevel } from './LevelBuilder';
 import Player from './Player';
 import EnemyManager from './EnemyManager';
 import { generateProceduralGun } from './assets/procedural-gun';
-import { playGunshot } from './sfx';
+import { playDoorLocked, playGunshot, playKeyPickup } from './sfx';
+import type { RefObject } from 'react';
 
-export type GameState = 'menu' | 'generating' | 'preview' | 'playing';
+export type GameState = 'menu' | 'generating' | 'preview' | 'playing' | 'won';
 
 export default class Game {
     private mount: HTMLDivElement;
     private stateChangeCallback: (newState: GameState, data?: any) => void;
-    private mapCanvasRef: React.RefObject<HTMLCanvasElement>;
+    private mapCanvasRef: RefObject<HTMLCanvasElement>;
 
     private renderer!: THREE.WebGLRenderer;
     private scene!: THREE.Scene;
@@ -33,6 +34,7 @@ export default class Game {
     private decals: any[] = [];
     private keys: { [key: string]: boolean } = {};
     private isMapVisible = false;
+    private isSprinting = false;
     private lastTime = 0;
     private animationFrameId!: number;
 
@@ -43,14 +45,13 @@ export default class Game {
     
     public ui: { gunSprite: HTMLImageElement | null } = { gunSprite: null };
 
-    constructor(mount: HTMLDivElement, stateChangeCallback: (newState: GameState, data?: any) => void, mapCanvasRef: React.RefObject<HTMLCanvasElement>) {
+    constructor(mount: HTMLDivElement, stateChangeCallback: (newState: GameState, data?: any) => void, mapCanvasRef: RefObject<HTMLCanvasElement>) {
         this.mount = mount;
         this.stateChangeCallback = stateChangeCallback;
         this.mapCanvasRef = mapCanvasRef;
     }
 
     public init() {
-        // Scene & Renderer
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x101010);
         
@@ -59,7 +60,6 @@ export default class Game {
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.mount.appendChild(this.renderer.domElement);
 
-        // Cameras
         this.perspectiveCamera = new THREE.PerspectiveCamera(75, this.mount.clientWidth / this.mount.clientHeight, 0.1, 1000);
         
         const aspect = this.mount.clientWidth / this.mount.clientHeight;
@@ -69,18 +69,15 @@ export default class Game {
         this.orthographicCamera.position.y = 50;
         this.orthographicCamera.lookAt(0, 0, 0);
 
-        // Controls
         this.controls = new PointerLockControls(this.perspectiveCamera, this.renderer.domElement);
         this.scene.add(this.controls.getObject());
         this.controls.addEventListener('lock', this.onLock);
         this.controls.addEventListener('unlock', this.onUnlock);
 
-        // Materials & Player/Enemy Managers
         this.materials = createMaterials();
         this.player = new Player(this.perspectiveCamera, this.controls, this.scene, this.materials.playerLight);
         this.enemyManager = new EnemyManager(this.scene, this.materials);
 
-        // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.03);
         this.scene.add(ambientLight);
 
@@ -99,27 +96,28 @@ export default class Game {
         if (this.levelContainer) {
             this.scene.remove(this.levelContainer);
         }
+        this.levelData = {};
 
-        const { grid, rooms, doorLocations } = generateLevel();
-        this.levelData.grid = grid;
-        this.levelData.doorLocations = doorLocations;
-        this.levelData.rooms = rooms; // Store rooms data
+        const levelGenData = generateLevel();
+        this.levelData = { ...this.levelData, ...levelGenData };
         
         this.levelContainer = new THREE.Group();
         this.scene.add(this.levelContainer);
 
-        // Allow UI to update before blocking thread
         await new Promise(resolve => setTimeout(resolve, 10));
 
-        const { floorTiles, doors } = buildLevel(this.levelContainer, { grid, rooms, doorLocations }, this.materials);
-        this.levelData.floorTiles = floorTiles;
-        this.levelData.doors = doors;
+        const buildResult = buildLevel(this.levelContainer, levelGenData, this.materials);
+        this.levelData = { ...this.levelData, ...buildResult };
 
         this.playerGuns = Array.from({ length: 10 }, () => generateProceduralGun());
         
+        const initialKeys: { [color: string]: boolean } = {};
+        this.levelData.keyColors.forEach((color: string) => initialKeys[color] = false);
+
         this.setState('preview', { 
             subtitle: 'Level generated. Press Play!',
             guns: this.playerGuns,
+            playerKeys: initialKeys,
         });
     }
 
@@ -127,27 +125,14 @@ export default class Game {
         if (this.state !== 'preview') return;
         this.enemyManager.clearEnemies();
 
-        let spawnTile: { x: number; z: number; };
-        if (this.levelData.rooms && this.levelData.rooms.length > 0) {
-            const spawnRoom = this.levelData.rooms[0];
-            // Use center of the first room as the spawn tile. Note: level generator uses y for z.
-            spawnTile = {
-                x: Math.floor(spawnRoom.x + spawnRoom.width / 2),
-                z: Math.floor(spawnRoom.y + spawnRoom.height / 2)
-            };
-        } else {
-            // Fallback to old logic if there are no rooms
-            spawnTile = this.levelData.floorTiles[Math.floor(Math.random() * this.levelData.floorTiles.length)];
-        }
-        
         const spawnPos = new THREE.Vector3(
-            (spawnTile.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2,
+            (this.levelData.spawn.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2,
             WALL_HEIGHT / 2,
-            (spawnTile.z - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2
+            (this.levelData.spawn.y - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2
         );
-        this.player.spawn(spawnPos);
+        this.player.spawn(spawnPos, this.levelData.keyColors);
         
-        this.enemyManager.spawnEnemies(this.levelData.floorTiles, spawnTile, this.levelData.grid);
+        this.enemyManager.spawnEnemies(this.levelData.floorTiles, this.levelData.spawn, this.levelData.grid);
         
         this.bullets.forEach(b => this.scene.remove(b));
         this.bullets = [];
@@ -160,26 +145,28 @@ export default class Game {
 
         this.lastShotTime = 0;
 
+        const initialKeys: { [color: string]: boolean } = {};
+        this.levelData.keyColors.forEach((color: string) => initialKeys[color] = false);
+        this.stateChangeCallback('playing', { playerKeys: initialKeys });
+
         this.controls.lock();
     }
     
-    private getCollision = (posX: number, posZ: number): { type: 'wall' | 'door', gridX: number, gridZ: number } | null => {
+    private getCollision = (posX: number, posZ: number): { type: 'wall' | 'door', object?: THREE.Object3D } | null => {
         const gridX = Math.floor((posX / TILE_SIZE) + MAP_WIDTH / 2);
         const gridZ = Math.floor((posZ / TILE_SIZE) + MAP_HEIGHT / 2);
 
         if (gridX < 0 || gridX >= MAP_WIDTH || gridZ < 0 || gridZ >= MAP_HEIGHT) {
-            const clampedX = THREE.MathUtils.clamp(gridX, 0, MAP_WIDTH - 1);
-            const clampedZ = THREE.MathUtils.clamp(gridZ, 0, MAP_HEIGHT - 1);
-            return { type: 'wall', gridX: clampedX, gridZ: clampedZ };
+            return { type: 'wall' };
         }
 
         if (this.levelData.grid[gridX]?.[gridZ] === 0) {
-            return { type: 'wall', gridX, gridZ };
+            return { type: 'wall' };
         }
         
         const door = this.levelData.doors.find((d: THREE.Mesh) => d.userData.gridX === gridX && d.userData.gridZ === gridZ);
         if (door && (door.userData.state === 'closed' || door.userData.state === 'closing')) {
-            return { type: 'door', gridX, gridZ };
+            return { type: 'door', object: door };
         }
         
         return null;
@@ -207,9 +194,10 @@ export default class Game {
                     door.position.y = targetY;
                     delete door.userData.openTime;
                 }
-            } else if (door.userData.state === 'open' && door.userData.openTime && time > door.userData.openTime + 5000) {
+            } else if (door.userData.state === 'open' && !door.userData.permanent && door.userData.openTime && time > door.userData.openTime + 5000) {
                 door.userData.state = 'closing';
             }
+
             if (door.position.y !== targetY) {
                 door.position.y = THREE.MathUtils.lerp(door.position.y, targetY, delta * doorSpeed);
             }
@@ -231,10 +219,8 @@ export default class Game {
         
         decal.position.copy(position).add(normal.clone().multiplyScalar(0.01));
 
-        // Fix decal orientation
-        const defaultPlaneNormal = new THREE.Vector3(0, 0, 1);
-        decal.quaternion.setFromUnitVectors(defaultPlaneNormal, normal);
-        decal.rotateZ(Math.random() * Math.PI * 2); // Add random spin
+        decal.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        decal.rotateZ(Math.random() * Math.PI * 2);
         
         this.scene.add(decal);
         this.decals.push({ mesh: decal, lifetime: 15.0 + Math.random() * 10 });
@@ -248,33 +234,11 @@ export default class Game {
             let hit = false;
 
             const collision = this.getCollision(bullet.position.x, bullet.position.z);
-
-            if (collision) {
-                let hitPosition = bullet.position.clone();
-
-                if (collision.type === 'wall') {
-                    const { gridX, gridZ } = collision;
-                    const wallMinX = (gridX - MAP_WIDTH / 2) * TILE_SIZE;
-                    const wallMaxX = wallMinX + TILE_SIZE;
-                    const wallMinZ = (gridZ - MAP_HEIGHT / 2) * TILE_SIZE;
-                    const wallMaxZ = wallMinZ + TILE_SIZE;
-
-                    const ray = new THREE.Ray(prevPos, bullet.userData.velocity.clone().normalize());
-                    const box = new THREE.Box3(
-                        new THREE.Vector3(wallMinX, 0, wallMinZ),
-                        new THREE.Vector3(wallMaxX, WALL_HEIGHT, wallMaxZ)
-                    );
-                    
-                    const intersectionPoint = new THREE.Vector3();
-                    if (ray.intersectBox(box, intersectionPoint)) {
-                        hitPosition.copy(intersectionPoint);
-                    }
-                }
-                
-                this.createBulletDecal(hitPosition, bullet.userData.velocity);
+            if (collision?.type === 'wall' || (collision?.type === 'door' && collision.object?.userData.state === 'closed')) {
+                // More precise collision check would be needed here, for now this is ok
+                this.createBulletDecal(bullet.position.clone(), bullet.userData.velocity);
                 hit = true;
             }
-
 
             if (!hit) {
                  const hitEnemy = this.enemyManager.checkHit(bullet.position);
@@ -345,6 +309,41 @@ export default class Game {
             }
         }
     }
+
+    private updateKeysAndExit(delta: number) {
+        // Key collection
+        for(let i = this.levelData.keys.length - 1; i >= 0; i--) {
+            const keyObject = this.levelData.keys[i];
+            keyObject.rotation.y += delta * 1.5;
+            keyObject.position.y = 1.5 + Math.sin(performance.now() / 500 + keyObject.userData.color.length) * 0.2;
+
+            if (keyObject.position.distanceTo(this.player.camera.position) < 2.0) {
+                const color = keyObject.userData.color;
+                this.player.collectedKeys[color] = true;
+                playKeyPickup();
+                
+                // The key is a child of levelContainer, not the scene directly.
+                if (this.levelContainer) {
+                    this.levelContainer.remove(keyObject);
+                }
+                
+                // Remove the key from the array so it's no longer updated or drawn on the map.
+                this.levelData.keys.splice(i, 1);
+
+                // Create a shallow copy of the keys object. This is crucial to ensure
+                // React detects the state change and re-renders the UI to highlight the collected key.
+                this.stateChangeCallback('playing', { playerKeys: { ...this.player.collectedKeys } });
+            }
+        }
+
+        // Exit interaction
+        if (this.keys['Space'] && this.levelData.exitMesh) {
+            if (this.levelData.exitMesh.position.distanceTo(this.player.camera.position) < 3.0) {
+                this.setState('won', { subtitle: 'You found the exit! Generate a new level to play again.' });
+                this.controls.unlock();
+            }
+        }
+    }
     
     private updateMap() {
         if (!this.mapCanvasRef.current) return;
@@ -365,7 +364,56 @@ export default class Game {
             }
         }
         
-        mapCtx.fillStyle = '#fff';
+        // Draw Exit
+        if (this.levelData.exitMesh) {
+            const exit = this.levelData.exitMesh;
+            const mapX = (exit.position.x / TILE_SIZE + MAP_WIDTH / 2) * mapTileSize;
+            const mapZ = (exit.position.z / TILE_SIZE + MAP_HEIGHT / 2) * mapTileSize;
+            mapCtx.fillStyle = '#4caf50'; // Green for exit
+            mapCtx.fillRect(mapX - 3, mapZ - 3, 6, 6);
+            mapCtx.strokeStyle = 'white';
+            mapCtx.lineWidth = 1;
+            mapCtx.strokeRect(mapX - 3, mapZ - 3, 6, 6);
+        }
+
+        // Draw Doors
+        this.levelData.doors.forEach((door: THREE.Mesh) => {
+            if (door.userData.state === 'closed' || door.userData.state === 'closing') {
+                const color = door.userData.color;
+                const colorHex = { red: '#d32f2f', green: '#388e3c', blue: '#1976d2', yellow: '#fbc02d' }[color] || '#888';
+                mapCtx.fillStyle = colorHex;
+                const mapX = (door.position.x / TILE_SIZE + MAP_WIDTH / 2) * mapTileSize;
+                const mapZ = (door.position.z / TILE_SIZE + MAP_HEIGHT / 2) * mapTileSize;
+                const doorWidthOnMap = 2;
+                if (door.rotation.y !== 0) { // Vertical door on map
+                     mapCtx.fillRect(mapX - (doorWidthOnMap/2), mapZ - (mapTileSize / 2), doorWidthOnMap, mapTileSize);
+                } else { // Horizontal door on map
+                     mapCtx.fillRect(mapX - (mapTileSize / 2), mapZ - (doorWidthOnMap/2), mapTileSize, doorWidthOnMap);
+                }
+            }
+        });
+        
+        // Draw keys
+        const keyColorMap = {
+            red: '#ff4d4d',
+            green: '#4dff4d',
+            blue: '#4d4dff',
+            yellow: '#ffff4d'
+        };
+        this.levelData.keys.forEach((key: THREE.Group) => {
+            const color = key.userData.color;
+            mapCtx.fillStyle = keyColorMap[color] || '#ffffff';
+            const mapX = (key.position.x / TILE_SIZE + MAP_WIDTH / 2) * mapTileSize;
+            const mapZ = (key.position.z / TILE_SIZE + MAP_HEIGHT / 2) * mapTileSize;
+            mapCtx.beginPath();
+            mapCtx.arc(mapX, mapZ, 3, 0, Math.PI * 2);
+            mapCtx.fill();
+            mapCtx.strokeStyle = 'black';
+            mapCtx.lineWidth = 1;
+            mapCtx.stroke();
+        });
+        
+        mapCtx.fillStyle = '#f44';
         this.enemyManager.enemies.forEach((enemy: THREE.Group) => {
             const mapX = (enemy.position.x / TILE_SIZE + MAP_WIDTH / 2) * mapTileSize;
             const mapZ = (enemy.position.z / TILE_SIZE + MAP_HEIGHT / 2) * mapTileSize;
@@ -415,6 +463,7 @@ export default class Game {
             this.updateBullets(delta);
             this.updateDeadParts(delta);
             this.updateDecals(delta);
+            this.updateKeysAndExit(delta);
 
             if(this.isMapVisible) this.updateMap();
             
@@ -422,7 +471,8 @@ export default class Game {
             this.stateChangeCallback('playing', { 
                 isMoving,
                 playerHealth: this.player.health,
-                playerMaxHealth: this.player.maxHealth
+                playerMaxHealth: this.player.maxHealth,
+                playerKeys: this.player.collectedKeys,
             });
             
             this.renderer.render(this.scene, this.perspectiveCamera);
@@ -434,9 +484,9 @@ export default class Game {
         this.lastTime = time;
     }
     
-    // --- Event Handlers ---
     private onLock = () => this.setState('playing');
     private onUnlock = () => {
+        if(this.state === 'won') return;
         const subtitle = this.player.isDead 
             ? 'You died! Generate a new level to try again.'
             : 'Paused. Click to resume.';
@@ -445,6 +495,11 @@ export default class Game {
 
     public handleKeyDown = (event: KeyboardEvent) => {
         this.keys[event.code] = true;
+
+        if (event.code === 'ShiftLeft' && this.state === 'playing') {
+            this.isSprinting = true;
+            this.player.setSprinting(true);
+        }
         if (event.code.startsWith('Digit')) {
             let index = parseInt(event.code.slice(5), 10) - 1;
             if (index === -1) index = 9;
@@ -466,6 +521,10 @@ export default class Game {
     };
     public handleKeyUp = (event: KeyboardEvent) => {
         this.keys[event.code] = false;
+        if (event.code === 'ShiftLeft' && this.state === 'playing') {
+            this.isSprinting = false;
+            this.player.setSprinting(false);
+        }
     };
     
     public handleMouseDown = (event: MouseEvent) => {
@@ -523,6 +582,8 @@ export default class Game {
         this.controls.removeEventListener('lock', this.onLock);
         this.controls.removeEventListener('unlock', this.onUnlock);
         this.renderer.dispose();
-        this.mount.removeChild(this.renderer.domElement);
+        if (this.mount && this.renderer.domElement) {
+            this.mount.removeChild(this.renderer.domElement);
+        }
     }
 }

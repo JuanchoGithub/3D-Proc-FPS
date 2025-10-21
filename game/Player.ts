@@ -1,17 +1,20 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { TILE_SIZE } from './constants';
-import { playFootstep } from './sfx';
+import { playDoorUnlock, playFootstep, playDoorLocked } from './sfx';
 
 export default class Player {
     public camera: THREE.PerspectiveCamera;
     private controls: PointerLockControls;
     private scene: THREE.Scene;
     private doorInteractionCooldown = 0;
+    private lastFootstepTime = 0;
+    private isSprinting = false;
 
     public health = 100;
     public maxHealth = 100;
     public isDead = false;
+    public collectedKeys: { [color: string]: boolean } = {};
 
     constructor(camera: THREE.PerspectiveCamera, controls: PointerLockControls, scene: THREE.Scene, playerLight: THREE.SpotLight) {
         this.camera = camera;
@@ -24,6 +27,10 @@ export default class Player {
         playerLight.target.position.set(0, 0, -1);
     }
 
+    public setSprinting(isSprinting: boolean) {
+        this.isSprinting = isSprinting;
+    }
+
     public takeDamage(amount: number) {
         if (this.isDead) return;
         this.health -= amount;
@@ -33,25 +40,39 @@ export default class Player {
         }
     }
 
-    spawn(position: THREE.Vector3) {
+    spawn(position: THREE.Vector3, keyColors: string[]) {
         this.camera.position.copy(position);
         this.health = this.maxHealth;
         this.isDead = false;
+        
+        // Explicitly clear the existing keys object to prevent stale references,
+        // then initialize it for the new level.
+        for (const key in this.collectedKeys) {
+            delete this.collectedKeys[key];
+        }
+        keyColors.forEach(color => {
+            this.collectedKeys[color] = false;
+        });
     }
 
     update(delta: number, keys: { [key: string]: boolean }, isCollision: (x: number, z: number) => boolean, doors: THREE.Mesh[]) {
-        // Movement
-        const speed = 5.0;
-        const playerRadius = 0.4; // How far to keep the camera from the wall geometry
+        const speed = this.isSprinting ? 9.0 : 5.0;
+        const playerRadius = 0.4;
         let moveX = 0;
         let moveZ = 0;
+
         if (keys['KeyW'] || keys['ArrowUp']) moveZ = -1;
         if (keys['KeyS'] || keys['ArrowDown']) moveZ = 1;
         if (keys['KeyA'] || keys['ArrowLeft']) moveX = -1;
         if (keys['KeyD'] || keys['ArrowRight']) moveX = 1;
 
         if (moveX !== 0 || moveZ !== 0) {
-            playFootstep();
+            const footstepInterval = this.isSprinting ? 0.3 : 0.45;
+            if (performance.now() > this.lastFootstepTime + footstepInterval * 1000) {
+                playFootstep(this.isSprinting);
+                this.lastFootstepTime = performance.now();
+            }
+
             const cameraDirection = new THREE.Vector3();
             this.camera.getWorldDirection(cameraDirection);
             cameraDirection.y = 0;
@@ -67,32 +88,44 @@ export default class Player {
             const velocity = moveDirection.multiplyScalar(speed * delta);
             const oldPosition = this.camera.position.clone();
             
-            // Move on X and check collision, applying a radius
             this.camera.position.x += velocity.x;
             if (isCollision(this.camera.position.x + Math.sign(velocity.x) * playerRadius, this.camera.position.z)) {
                 this.camera.position.x = oldPosition.x;
             }
-            // Move on Z and check collision, applying a radius
             this.camera.position.z += velocity.z;
             if (isCollision(this.camera.position.x, this.camera.position.z + Math.sign(velocity.z) * playerRadius)) {
                 this.camera.position.z = oldPosition.z;
             }
         }
 
-        // Door Interaction
         if (this.doorInteractionCooldown > 0) {
             this.doorInteractionCooldown -= delta;
         }
         if (keys['Space'] && this.doorInteractionCooldown <= 0) {
             const interactionRange = TILE_SIZE * 1.5;
-            let triggeredDoor = false;
+            let triggeredSomething = false;
+
             for (const door of doors) {
                 if (door.position.distanceTo(this.camera.position) < interactionRange) {
-                    if (door.userData.state === 'closed') { door.userData.state = 'opening'; triggeredDoor = true; break; }
-                    if (door.userData.state === 'open') { door.userData.state = 'closing'; triggeredDoor = true; break; }
+                    triggeredSomething = true;
+                    if (door.userData.color) { // Colored door
+                        if (this.collectedKeys[door.userData.color]) {
+                            if (door.userData.state === 'closed') {
+                                door.userData.state = 'opening';
+                                door.userData.permanent = true;
+                                playDoorUnlock();
+                            }
+                        } else {
+                            playDoorLocked();
+                        }
+                    } else { // Regular door
+                        if (door.userData.state === 'closed') door.userData.state = 'opening';
+                        else if (door.userData.state === 'open') door.userData.state = 'closing';
+                    }
+                    break; 
                 }
             }
-            if (triggeredDoor) this.doorInteractionCooldown = 0.5;
+            if (triggeredSomething) this.doorInteractionCooldown = 0.5;
         }
     }
 
