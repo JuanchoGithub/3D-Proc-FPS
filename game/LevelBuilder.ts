@@ -34,10 +34,10 @@ function addVertexColors(geometry: THREE.BufferGeometry, lightPositions: THREE.V
 
 export function buildLevel(
     levelContainer: THREE.Group,
-    levelData: { grid: number[][], rooms: any[], doors: any[], keys: any[], exit: any },
+    levelData: { grid: number[][], rooms: any[], doors: any[], keys: any[], exit: any, switch: any },
     materials: any
 ) {
-    const { grid, rooms, doors: doorLocations, keys: keyLocations, exit: exitLocation } = levelData;
+    const { grid, rooms, doors: doorLocations, keys: keyLocations, exit: exitLocation, switch: switchLocation } = levelData;
 
     const floorTiles: {x: number, z: number}[] = [];
     const roomMap = Array(MAP_WIDTH).fill(null).map(() => Array(MAP_HEIGHT).fill(-1));
@@ -186,5 +186,19 @@ export function buildLevel(
     exitMesh.position.set(exitWorldX, WALL_HEIGHT / 2, exitWorldZ);
     levelContainer.add(exitMesh);
 
-    return { floorTiles, doors, keys, exitMesh };
+    const switchBaseGeom = new THREE.CylinderGeometry(0.5, 0.7, 1.5, 16);
+    const switchButtonGeom = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 16);
+    switchButtonGeom.translate(0, 0.75, 0);
+    const switchBase = new THREE.Mesh(switchBaseGeom, materials.clutter.switchBase);
+    const switchButton = new THREE.Mesh(switchButtonGeom, materials.clutter.switchButtonInactive);
+    switchButton.name = 'switchButton';
+    const switchGroup = new THREE.Group();
+    switchGroup.add(switchBase, switchButton);
+    const switchWorldX = (switchLocation.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2;
+    const switchWorldZ = (switchLocation.y - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2;
+    switchGroup.position.set(switchWorldX, 0.75, switchWorldZ);
+    levelContainer.add(switchGroup);
+
+
+    return { floorTiles, doors, keys, exitMesh, switchMesh: switchGroup };
 }

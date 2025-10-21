@@ -25,6 +25,7 @@ const GameUI = ({
   playerMaxHealth,
   damageTaken,
   playerKeys,
+  objectiveText,
 }) => {
   const gun = playerGuns[currentGunIndex];
   
@@ -50,6 +51,12 @@ const GameUI = ({
 
       {gameState === 'playing' && (
         <>
+          {objectiveText && (
+            <div className="objective-overlay">
+                {objectiveText}
+            </div>
+           )}
+
           {isMapVisible && (
              <div className="map-overlay">
               <canvas ref={mapCanvasRef} className="map-canvas" width="200" height="200"></canvas>
@@ -93,6 +100,7 @@ function App() {
   const [isMapVisible, setMapVisible] = useState(false);
   const [isMoving, setMoving] = useState(false);
   const [playerKeys, setPlayerKeys] = useState({});
+  const [objectiveText, setObjectiveText] = useState('');
   
   const [playerHealth, setPlayerHealth] = useState(100);
   const [playerMaxHealth, setPlayerMaxHealth] = useState(100);
@@ -109,6 +117,7 @@ function App() {
     if(data?.playerHealth !== undefined) setPlayerHealth(data.playerHealth);
     if(data?.playerMaxHealth !== undefined) setPlayerMaxHealth(data.playerMaxHealth);
     if(data?.playerKeys) setPlayerKeys(data.playerKeys);
+    if(data?.objectiveText !== undefined) setObjectiveText(data.objectiveText);
 
     if (newState === 'playing') {
       const gunSprite = document.querySelector('.gun-sprite') as HTMLImageElement;
@@ -180,6 +189,7 @@ function App() {
         playerMaxHealth={playerMaxHealth}
         damageTaken={damageTaken}
         playerKeys={playerKeys}
+        objectiveText={objectiveText}
       />
     </>
   );

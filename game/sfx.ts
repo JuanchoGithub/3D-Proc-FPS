@@ -183,3 +183,37 @@ export function playDoorLocked() {
     osc.start(now);
     osc.stop(now + 0.15);
 }
+
+export function playSwitchActivate() {
+    const context = getAudioContext();
+    if (context.state === 'suspended') context.resume();
+    const now = context.currentTime;
+    
+    const osc1 = context.createOscillator();
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(100, now);
+    osc1.frequency.linearRampToValueAtTime(80, now + 0.5);
+
+    const gain1 = context.createGain();
+    gain1.gain.setValueAtTime(0.2, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+    
+    osc1.connect(gain1);
+    gain1.connect(context.destination);
+    
+    const osc2 = context.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1200, now + 0.05);
+
+    const gain2 = context.createGain();
+    gain2.gain.setValueAtTime(0.3, now + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+
+    osc2.connect(gain2);
+    gain2.connect(context.destination);
+    
+    osc1.start(now);
+    osc2.start(now + 0.05);
+    osc1.stop(now + 0.5);
+    osc2.stop(now + 0.2);
+}

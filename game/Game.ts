@@ -7,7 +7,7 @@ import { buildLevel } from './LevelBuilder';
 import Player from './Player';
 import EnemyManager from './EnemyManager';
 import { generateProceduralGun } from './assets/procedural-gun';
-import { playDoorLocked, playGunshot, playKeyPickup } from './sfx';
+import { playDoorLocked, playGunshot, playKeyPickup, playSwitchActivate } from './sfx';
 import type { RefObject } from 'react';
 
 export type GameState = 'menu' | 'generating' | 'preview' | 'playing' | 'won';
@@ -88,6 +88,10 @@ export default class Game {
         this.state = newState;
         this.stateChangeCallback(newState, data);
     }
+
+    private setObjective(text: string) {
+        this.stateChangeCallback(this.state, { objectiveText: text });
+    }
     
     public async generateNewLevel() {
         if (this.state === 'generating') return;
@@ -144,10 +148,12 @@ export default class Game {
         this.decals = [];
 
         this.lastShotTime = 0;
+        this.levelData.switchActivated = false;
 
         const initialKeys: { [color: string]: boolean } = {};
         this.levelData.keyColors.forEach((color: string) => initialKeys[color] = false);
         this.stateChangeCallback('playing', { playerKeys: initialKeys });
+        this.setObjective(this.levelData.keyColors.length > 0 ? 'Find the colored keys to proceed.' : 'Find and activate the main switch.');
 
         this.controls.lock();
     }
@@ -235,7 +241,6 @@ export default class Game {
 
             const collision = this.getCollision(bullet.position.x, bullet.position.z);
             if (collision?.type === 'wall' || (collision?.type === 'door' && collision.object?.userData.state === 'closed')) {
-                // More precise collision check would be needed here, for now this is ok
                 this.createBulletDecal(bullet.position.clone(), bullet.userData.velocity);
                 hit = true;
             }
@@ -310,7 +315,7 @@ export default class Game {
         }
     }
 
-    private updateKeysAndExit(delta: number) {
+    private updateInteractables(delta: number) {
         // Key collection
         for(let i = this.levelData.keys.length - 1; i >= 0; i--) {
             const keyObject = this.levelData.keys[i];
@@ -322,25 +327,39 @@ export default class Game {
                 this.player.collectedKeys[color] = true;
                 playKeyPickup();
                 
-                // The key is a child of levelContainer, not the scene directly.
-                if (this.levelContainer) {
-                    this.levelContainer.remove(keyObject);
-                }
-                
-                // Remove the key from the array so it's no longer updated or drawn on the map.
+                if (this.levelContainer) this.levelContainer.remove(keyObject);
                 this.levelData.keys.splice(i, 1);
 
-                // Create a shallow copy of the keys object. This is crucial to ensure
-                // React detects the state change and re-renders the UI to highlight the collected key.
+                const allKeysCollected = this.levelData.keyColors.every((c: string) => this.player.collectedKeys[c]);
+                if (allKeysCollected) {
+                    this.setObjective('All keys found! Find and activate the main switch.');
+                }
+
                 this.stateChangeCallback('playing', { playerKeys: { ...this.player.collectedKeys } });
+            }
+        }
+
+        // Switch interaction
+        if (!this.levelData.switchActivated && this.levelData.switchMesh && this.keys['Space']) {
+            if (this.levelData.switchMesh.position.distanceTo(this.player.camera.position) < 2.5) {
+                this.levelData.switchActivated = true;
+                const button = this.levelData.switchMesh.getObjectByName('switchButton');
+                if (button) (button as THREE.Mesh).material = this.materials.clutter.switchButtonActive;
+                playSwitchActivate();
+                this.setObjective('Switch activated! Find the exit.');
             }
         }
 
         // Exit interaction
         if (this.keys['Space'] && this.levelData.exitMesh) {
             if (this.levelData.exitMesh.position.distanceTo(this.player.camera.position) < 3.0) {
-                this.setState('won', { subtitle: 'You found the exit! Generate a new level to play again.' });
-                this.controls.unlock();
+                if (this.levelData.switchActivated) {
+                    this.setState('won', { subtitle: 'You found the exit! Generate a new level to play again.' });
+                    this.controls.unlock();
+                } else {
+                    this.setObjective('Exit is locked. You must activate the main switch first.');
+                    playDoorLocked();
+                }
             }
         }
     }
@@ -364,7 +383,7 @@ export default class Game {
             }
         }
         
-        // Draw Exit
+        // Draw Exit & Switch
         if (this.levelData.exitMesh) {
             const exit = this.levelData.exitMesh;
             const mapX = (exit.position.x / TILE_SIZE + MAP_WIDTH / 2) * mapTileSize;
@@ -375,6 +394,19 @@ export default class Game {
             mapCtx.lineWidth = 1;
             mapCtx.strokeRect(mapX - 3, mapZ - 3, 6, 6);
         }
+        if (this.levelData.switchMesh && !this.levelData.switchActivated) {
+            const sw = this.levelData.switchMesh;
+            const mapX = (sw.position.x / TILE_SIZE + MAP_WIDTH / 2) * mapTileSize;
+            const mapZ = (sw.position.z / TILE_SIZE + MAP_HEIGHT / 2) * mapTileSize;
+            mapCtx.fillStyle = '#f57c00'; // Orange for switch
+            mapCtx.beginPath();
+            mapCtx.moveTo(mapX, mapZ - 4);
+            mapCtx.lineTo(mapX + 4, mapZ + 4);
+            mapCtx.lineTo(mapX - 4, mapZ + 4);
+            mapCtx.closePath();
+            mapCtx.fill();
+        }
+
 
         // Draw Doors
         this.levelData.doors.forEach((door: THREE.Mesh) => {
@@ -463,7 +495,7 @@ export default class Game {
             this.updateBullets(delta);
             this.updateDeadParts(delta);
             this.updateDecals(delta);
-            this.updateKeysAndExit(delta);
+            this.updateInteractables(delta);
 
             if(this.isMapVisible) this.updateMap();
             
@@ -490,7 +522,7 @@ export default class Game {
         const subtitle = this.player.isDead 
             ? 'You died! Generate a new level to try again.'
             : 'Paused. Click to resume.';
-        this.setState('menu', { subtitle, isMapVisible: false });
+        this.setState('menu', { subtitle, isMapVisible: false, objectiveText: '' });
     };
 
     public handleKeyDown = (event: KeyboardEvent) => {

@@ -85,6 +85,9 @@ export const createMaterials = () => {
             paper: new THREE.MeshStandardMaterial({ map: paperTextures.map, normalMap: paperTextures.normalMap, normalScale: new THREE.Vector2(0.2, 0.2), side: THREE.DoubleSide }),
             lamp: new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.8 }),
             lampBulb: new THREE.MeshStandardMaterial({ color: 0xffffee, emissive: 0xffffee, emissiveIntensity: 1 }),
+            switchBase: new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.6, metalness: 0.8 }),
+            switchButtonInactive: new THREE.MeshStandardMaterial({ color: 0xaa0000, emissive: 0x880000, emissiveIntensity: 1, roughness: 0.4 }),
+            switchButtonActive: new THREE.MeshStandardMaterial({ color: 0x00aa00, emissive: 0x008800, emissiveIntensity: 1.5, roughness: 0.4 }),
         },
         decal: new THREE.MeshStandardMaterial({
             map: bulletDecalTextures.map,

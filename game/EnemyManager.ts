@@ -451,7 +451,15 @@ export default class EnemyManager {
     private updateSentinel(enemy: THREE.Group, delta: number, player: Player, isCollision: (x: number, z: number) => boolean, time: number, levelContainer: THREE.Group) {
         const playerPosition = player.camera.position;
         
-        enemy.lookAt(playerPosition);
+        // The body contains the eye and should track the player fully.
+        const body = enemy.getObjectByName('body');
+        if (body) {
+            body.lookAt(playerPosition);
+        }
+
+        // The main group (with panels) should only rotate horizontally for movement.
+        const lookAtTarget = new THREE.Vector3(playerPosition.x, enemy.position.y, playerPosition.z);
+        enemy.lookAt(lookAtTarget);
         
         const phase = time / 1000 * 0.8 + enemy.userData.animationOffset;
         
