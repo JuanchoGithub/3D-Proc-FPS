@@ -94,6 +94,8 @@ export function buildLevel(
                 ceilingGeometries[tileFloorTheme].push(ceilingGeom);
 
             } else { // Wall
+                if (i === exitLocation.x && j === exitLocation.y) continue;
+
                 const isVisible = (grid[i+1]?.[j] === 1) || (grid[i-1]?.[j] === 1) || (grid[i][j+1] === 1) || (grid[i][j-1] === 1);
                 if (!isVisible) continue;
 
@@ -184,6 +186,16 @@ export function buildLevel(
     const exitWorldX = (exitLocation.x - MAP_WIDTH / 2) * TILE_SIZE + TILE_SIZE / 2;
     const exitWorldZ = (exitLocation.y - MAP_HEIGHT / 2) * TILE_SIZE + TILE_SIZE / 2;
     exitMesh.position.set(exitWorldX, WALL_HEIGHT / 2, exitWorldZ);
+    
+    const { x, y } = exitLocation;
+    // Check if there is a floor tile to the left or right of the exit's grid position.
+    // This indicates the wall is vertical (runs along Z-axis), so the door should be rotated.
+    const isFloorLeft = grid[x - 1]?.[y] === 1;
+    const isFloorRight = grid[x + 1]?.[y] === 1;
+    if (isFloorLeft || isFloorRight) {
+        exitMesh.rotation.y = Math.PI / 2;
+    }
+    
     levelContainer.add(exitMesh);
 
     const switchBaseGeom = new THREE.CylinderGeometry(0.5, 0.7, 1.5, 16);

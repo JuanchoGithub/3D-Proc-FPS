@@ -37,6 +37,7 @@ export default class Game {
     private isSprinting = false;
     private lastTime = 0;
     private animationFrameId!: number;
+    private isCompletingLevel = false;
 
     private state: GameState = 'menu';
     private playerGuns: any[] = [];
@@ -94,7 +95,6 @@ export default class Game {
     }
     
     public async generateNewLevel() {
-        if (this.state === 'generating') return;
         this.setState('generating', { subtitle: 'Generating level...' });
 
         if (this.levelContainer) {
@@ -354,8 +354,7 @@ export default class Game {
         if (this.keys['Space'] && this.levelData.exitMesh) {
             if (this.levelData.exitMesh.position.distanceTo(this.player.camera.position) < 3.0) {
                 if (this.levelData.switchActivated) {
-                    this.setState('won', { subtitle: 'You found the exit! Generate a new level to play again.' });
-                    this.controls.unlock();
+                    this.handleLevelComplete();
                 } else {
                     this.setObjective('Exit is locked. You must activate the main switch first.');
                     playDoorLocked();
@@ -364,6 +363,20 @@ export default class Game {
         }
     }
     
+    private handleLevelComplete() {
+        if (this.isCompletingLevel) return;
+        this.isCompletingLevel = true;
+        this.controls.unlock();
+        this.setState('won', { subtitle: 'Level Cleared!' });
+        
+        setTimeout(async () => {
+            this.setState('generating', { subtitle: 'Generating next level...'});
+            await this.generateNewLevel();
+            this.startGame();
+            this.isCompletingLevel = false;
+        }, 2000);
+    }
+
     private updateMap() {
         if (!this.mapCanvasRef.current) return;
         const mapCtx = this.mapCanvasRef.current.getContext('2d');
@@ -518,7 +531,7 @@ export default class Game {
     
     private onLock = () => this.setState('playing');
     private onUnlock = () => {
-        if(this.state === 'won') return;
+        if (this.isCompletingLevel) return;
         const subtitle = this.player.isDead 
             ? 'You died! Generate a new level to try again.'
             : 'Paused. Click to resume.';

@@ -36,16 +36,18 @@ const GameUI = ({
 
       {(gameState === 'menu' || gameState === 'generating' || gameState === 'preview' || gameState === 'won') && (
         <div className="overlay">
-          <h1>{gameState === 'won' ? 'You Escaped!' : '3D Procedural Shooter'}</h1>
+          <h1>3D Procedural Shooter</h1>
           <p>{subtitle}</p>
-          <div className="menu-buttons">
-            <button onClick={onGenerate} disabled={gameState === 'generating'}>
-              Generate New Level
-            </button>
-            <button onClick={onPlay} disabled={gameState !== 'preview'}>
-              Play Game
-            </button>
-          </div>
+          {(gameState === 'menu' || gameState === 'preview') && (
+            <div className="menu-buttons">
+              <button onClick={onGenerate} disabled={gameState === 'generating'}>
+                Generate New Level
+              </button>
+              <button onClick={onPlay} disabled={gameState !== 'preview'}>
+                Play Game
+              </button>
+            </div>
+          )}
         </div>
       )}
 
