@@ -70,7 +70,7 @@ export default class Game {
         this.orthographicCamera.lookAt(0, 0, 0);
 
         this.controls = new PointerLockControls(this.perspectiveCamera, this.renderer.domElement);
-        this.scene.add(this.controls.getObject());
+        this.scene.add(this.perspectiveCamera);
         this.controls.addEventListener('lock', this.onLock);
         this.controls.addEventListener('unlock', this.onUnlock);
 
